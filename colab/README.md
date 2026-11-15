@@ -25,5 +25,12 @@ does not expose compatible audio or image endpoints, so IRCO does not advertise
 multimodal capabilities yet. A future multimodal notebook must expose and
 document those endpoints before they can be enabled.
 
+The notebook currently sends its heartbeat to the separate Colab bridge, not
+to IRCO's registry. Until that notebook is wired to IRCO registration, use the
+registration API explicitly with the administrator credential held outside
+Git. Keep the returned heartbeat token only in the notebook runtime and send
+it as a bearer token on heartbeat requests; re-register after either side
+restarts or the session expires.
+
 Do not copy or commit the VPS `.env`, heartbeat secrets, account files,
 generated tunnel URLs, or notebook outputs into this repository.

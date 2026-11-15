@@ -94,11 +94,19 @@ class ContractTests(unittest.TestCase):
         for path in ("/health", "/version", "/openapi.json"):
             self.assertEqual([], expected["paths"][path]["get"]["security"])
         public_paths = {"/health", "/version", "/openapi.json"}
+        colab_security = {
+            "/api/v1/admin/colab/register": [{"colabAdminAuth": []}],
+            "/api/v1/admin/colab/heartbeat": [{"colabSessionAuth": []}],
+        }
         for path, operations in expected["paths"].items():
-            for operation in operations.values():
+            for method, operation in operations.items():
                 if not isinstance(operation, dict) or "responses" not in operation:
                     continue
-                expected_security = [] if path in public_paths else expected["security"]
+                expected_security = (
+                    []
+                    if path in public_paths
+                    else colab_security.get(path, expected["security"])
+                )
                 self.assertEqual(expected_security, operation.get("security", expected["security"]))
 
     def test_route_paths_match_router_openapi_and_implemented_contract(self):
@@ -113,13 +121,21 @@ class ContractTests(unittest.TestCase):
                 re.DOTALL,
             )
         }
+        router_routes.update(
+            (path, "delete")
+            for path in re.findall(
+                r'\.route\(\s*"([^"]+)"\s*,\s*post\([^)]+\)\.delete\(',
+                source,
+                re.DOTALL,
+            )
+        )
         openapi = yaml.safe_load(
             (ROOT / "docs" / "api" / "openapi.yaml").read_text(encoding="utf-8")
         )
         openapi_routes = {
             (path, method)
             for path, operations in openapi["paths"].items()
-            for method in ("get", "post", "patch")
+            for method in ("get", "post", "patch", "delete")
             if method in operations
         }
         contract = (ROOT / "contracts" / "api.md").read_text(encoding="utf-8")
@@ -129,7 +145,7 @@ class ContractTests(unittest.TestCase):
         contract_routes = {
             (path, method.lower())
             for method, path in re.findall(
-                r"\|\s*(GET|POST|PATCH)\s*\|\s*`([^`]+)`\s*\|",
+                r"\|\s*(GET|POST|PATCH|DELETE)\s*\|\s*`([^`]+)`\s*\|",
                 implemented_section,
             )
         }

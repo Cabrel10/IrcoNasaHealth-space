@@ -156,6 +156,175 @@
         }
       }
     },
+    "/api/v1/admin/colab/register": {
+      "post": {
+        "operationId": "registerColabRuntime",
+        "description": "Register or replace the active Colab runtime using the separate administrator token.",
+        "security": [
+          {
+            "colabAdminAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ColabRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The runtime was registered and a one-time heartbeat token was issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ColabRegistration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid administrator token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Colab registration is disabled because no administrator token is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "revokeColabRuntime",
+        "description": "Revoke the active Colab runtime and its heartbeat token.",
+        "security": [
+          {
+            "colabAdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The active runtime was revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "revoked"
+                  ],
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid administrator token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/colab/heartbeat": {
+      "post": {
+        "operationId": "heartbeatColabRuntime",
+        "description": "Refresh the current runtime TTL and optionally update its URL, model, key, or capabilities. Authenticated by the session heartbeat token.",
+        "security": [
+          {
+            "colabSessionAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ColabHeartbeatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The runtime heartbeat was accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ColabStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The session is invalid, revoked, or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/colab/status": {
+      "get": {
+        "operationId": "getColabStatus",
+        "responses": {
+          "200": {
+            "description": "Current runtime liveness; secrets and upstream URLs are never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ColabStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/colab/capabilities": {
+      "get": {
+        "operationId": "getColabCapabilities",
+        "responses": {
+          "200": {
+            "description": "Current runtime liveness and advertised module capabilities.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ColabStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/indicators": {
       "get": {
         "operationId": "listIndicators",
@@ -1287,6 +1456,16 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "colabAdminAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "IRCO_COLAB_ADMIN_TOKEN; separate from IRCO_API_TOKEN."
+      },
+      "colabSessionAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "One-time heartbeat token returned by Colab registration."
       }
     },
     "schemas": {
@@ -1369,6 +1548,7 @@
           "rules_loaded",
           "indicators_loaded",
           "ai_available",
+          "colab_available",
           "knowledge_available"
         ],
         "properties": {
@@ -1401,8 +1581,163 @@
           "ai_available": {
             "type": "boolean"
           },
+          "colab_available": {
+            "type": "boolean"
+          },
           "knowledge_available": {
             "type": "boolean"
+          }
+        }
+      },
+      "ColabCapabilities": {
+        "type": "object",
+        "required": [
+          "chat"
+        ],
+        "properties": {
+          "chat": {
+            "type": "boolean"
+          },
+          "asr": {
+            "type": "boolean",
+            "default": false
+          },
+          "tts": {
+            "type": "boolean",
+            "default": false
+          },
+          "vision": {
+            "type": "boolean",
+            "default": false
+          },
+          "vlm": {
+            "type": "boolean",
+            "default": false
+          },
+          "image": {
+            "type": "boolean",
+            "default": false
+          },
+          "multi": {
+            "type": "boolean",
+            "default": false
+          },
+          "streaming": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ColabRegistrationRequest": {
+        "type": "object",
+        "required": [
+          "api_base",
+          "api_key",
+          "model",
+          "capabilities"
+        ],
+        "properties": {
+          "api_base": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "api_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ColabCapabilities"
+          }
+        }
+      },
+      "ColabHeartbeatRequest": {
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "api_base": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "api_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ColabCapabilities"
+          }
+        }
+      },
+      "ColabRegistration": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "heartbeat_token",
+          "ttl_seconds"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "heartbeat_token": {
+            "type": "string",
+            "description": "One-time secret used to authenticate heartbeats."
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "ColabStatus": {
+        "type": "object",
+        "required": [
+          "available",
+          "session_id",
+          "model",
+          "capabilities",
+          "expires_in_seconds"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "capabilities": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ColabCapabilities"
+              }
+            ],
+            "nullable": true
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "nullable": true
           }
         }
       },

@@ -3,7 +3,7 @@ use std::{
     env,
     path::{Path as FsPath, PathBuf},
     sync::{Arc, Mutex, RwLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -11,7 +11,7 @@ use axum::{
         rejection::{JsonRejection, QueryRejection},
         Path, Query, State,
     },
-    http::{header, HeaderValue, Request, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, patch, post},
@@ -43,6 +43,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
+use uuid::Uuid;
 
 pub mod demo;
 
@@ -55,6 +56,9 @@ pub struct AppState {
     knowledge: Arc<Option<KnowledgeBase>>,
     started_at: Arc<Instant>,
     api_token: Option<String>,
+    colab_admin_token: Option<String>,
+    colab_ttl: Duration,
+    colab_session: Arc<Mutex<Option<ColabSession>>>,
 }
 
 impl AppState {
@@ -67,6 +71,9 @@ impl AppState {
             knowledge: Arc::new(None),
             started_at: Arc::new(Instant::now()),
             api_token,
+            colab_admin_token: None,
+            colab_ttl: Duration::from_secs(180),
+            colab_session: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -86,6 +93,18 @@ impl AppState {
         init_db(&database)?;
         init_alerts_db(&database)?;
         let rules = irco_decisions::rules::load_rules(rules_path)?;
+        let colab_ttl = env::var("IRCO_COLAB_TTL_SECONDS")
+            .map(|value| {
+                value.parse::<u64>().map_err(|error| {
+                    IrcoError::Config(format!("Invalid IRCO_COLAB_TTL_SECONDS: {error}"))
+                })
+            })
+            .unwrap_or(Ok(180))?;
+        if !(30..=3600).contains(&colab_ttl) {
+            return Err(IrcoError::Config(
+                "IRCO_COLAB_TTL_SECONDS must be between 30 and 3600".to_owned(),
+            ));
+        }
         let registry_path = env::var("IRCO_INDICATOR_REGISTRY")
             .unwrap_or_else(|_| "config/indicators/registry.toml".to_owned());
         let registry_content = std::fs::read_to_string(&registry_path).map_err(|error| {
@@ -103,6 +122,8 @@ impl AppState {
         let corpus_path =
             env::var("IRCO_CORPUS_PATH").unwrap_or_else(|_| "data/corpus.jsonl".to_owned());
         let mut state = Self::new(database, rules, api_token);
+        state.colab_admin_token = env::var("IRCO_COLAB_ADMIN_TOKEN").ok();
+        state.colab_ttl = Duration::from_secs(colab_ttl);
         state.rules_path = Some(Arc::new(PathBuf::from(rules_path)));
         state.indicators = Arc::new(Some(registry));
         if FsPath::new(&corpus_path).is_file() {
@@ -110,7 +131,140 @@ impl AppState {
         }
         Ok(state)
     }
+}
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ColabCapabilities {
+    chat: bool,
+    #[serde(default)]
+    asr: bool,
+    #[serde(default)]
+    tts: bool,
+    #[serde(default)]
+    vision: bool,
+    #[serde(default)]
+    vlm: bool,
+    #[serde(default)]
+    image: bool,
+    #[serde(default)]
+    multi: bool,
+    #[serde(default)]
+    streaming: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ColabRegistrationRequest {
+    api_base: String,
+    api_key: String,
+    model: String,
+    capabilities: ColabCapabilities,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ColabHeartbeatRequest {
+    session_id: String,
+    api_base: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+    capabilities: Option<ColabCapabilities>,
+}
+
+#[derive(Debug)]
+struct ColabSession {
+    session_id: String,
+    heartbeat_token: String,
+    api_base: String,
+    api_key: String,
+    model: String,
+    capabilities: ColabCapabilities,
+    last_heartbeat: Instant,
+}
+
+#[derive(Debug, Serialize)]
+struct ColabRegistrationResponse {
+    session_id: String,
+    heartbeat_token: String,
+    ttl_seconds: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct ColabStatusResponse {
+    available: bool,
+    session_id: Option<String>,
+    model: Option<String>,
+    capabilities: Option<ColabCapabilities>,
+    expires_in_seconds: Option<u64>,
+}
+
+impl AppState {
+    fn colab_status(&self) -> ColabStatusResponse {
+        let Ok(mut session) = self.colab_session.lock() else {
+            return ColabStatusResponse {
+                available: false,
+                session_id: None,
+                model: None,
+                capabilities: None,
+                expires_in_seconds: None,
+            };
+        };
+        let Some(current) = session.as_ref() else {
+            return ColabStatusResponse {
+                available: false,
+                session_id: None,
+                model: None,
+                capabilities: None,
+                expires_in_seconds: None,
+            };
+        };
+        let elapsed = current.last_heartbeat.elapsed();
+        if elapsed >= self.colab_ttl {
+            *session = None;
+            return ColabStatusResponse {
+                available: false,
+                session_id: None,
+                model: None,
+                capabilities: None,
+                expires_in_seconds: None,
+            };
+        }
+        ColabStatusResponse {
+            available: !current.api_base.is_empty() && !current.api_key.is_empty(),
+            session_id: Some(current.session_id.clone()),
+            model: Some(current.model.clone()),
+            capabilities: Some(current.capabilities.clone()),
+            expires_in_seconds: Some((self.colab_ttl - elapsed).as_secs()),
+        }
+    }
+
+    fn authorize_colab_admin(&self, headers: &HeaderMap) -> Result<(), ApiError> {
+        let Some(expected) = &self.colab_admin_token else {
+            return Err(api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "colab_admin_not_configured",
+                "Colab registration is disabled",
+                "Configure IRCO_COLAB_ADMIN_TOKEN and restart the API.",
+            ));
+        };
+        let supplied = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+        if supplied != Some(expected.as_str()) {
+            return Err(api_error(
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "A valid Colab administrator token is required",
+                "Set Authorization: Bearer <IRCO_COLAB_ADMIN_TOKEN>.",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl AppState {
     fn rules_snapshot(&self) -> Result<RulesDocument, IrcoError> {
         self.rules
             .read()
@@ -175,6 +329,7 @@ struct HealthResponse {
     rules_loaded: usize,
     indicators_loaded: usize,
     ai_available: bool,
+    colab_available: bool,
     knowledge_available: bool,
 }
 
@@ -381,6 +536,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/health", get(health))
         .route("/api/v1/rules", get(rules))
         .route("/api/v1/admin/rules/reload", post(reload_rules))
+        .route(
+            "/api/v1/admin/colab/register",
+            post(register_colab).delete(revoke_colab),
+        )
+        .route("/api/v1/admin/colab/heartbeat", post(colab_heartbeat))
+        .route("/api/v1/colab/status", get(colab_status))
+        .route("/api/v1/colab/capabilities", get(colab_capabilities))
         .route("/api/v1/indicators", get(indicators))
         .route("/api/v1/indicators/:indicator_id", get(indicator))
         .route("/api/v1/state", get(health_overview))
@@ -418,6 +580,10 @@ async fn authenticate(
             request.uri().path(),
             "/health" | "/version" | "/openapi.json"
         )
+        || matches!(
+            request.uri().path(),
+            "/api/v1/admin/colab/register" | "/api/v1/admin/colab/heartbeat"
+        )
     {
         return next.run(request).await;
     }
@@ -446,6 +612,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let rules = state.rules.read();
     let rules_ok = rules.is_ok();
     let rules_loaded = rules.as_ref().map_or(0, |rules| rules.rules.len());
+    let colab_available = state.colab_status().available;
     Json(HealthResponse {
         status: if database_ok && rules_ok {
             "ok"
@@ -465,9 +632,228 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
             .as_ref()
             .as_ref()
             .map_or(0, |registry| registry.indicators.len()),
-        ai_available: false,
+        ai_available: colab_available,
+        colab_available,
         knowledge_available: state.knowledge.is_some(),
     })
+}
+
+async fn colab_status(State(state): State<AppState>) -> Json<ColabStatusResponse> {
+    Json(state.colab_status())
+}
+
+async fn colab_capabilities(State(state): State<AppState>) -> Json<ColabStatusResponse> {
+    Json(state.colab_status())
+}
+
+async fn register_colab(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    request: Result<Json<ColabRegistrationRequest>, JsonRejection>,
+) -> Result<Json<ColabRegistrationResponse>, ApiError> {
+    state.authorize_colab_admin(&headers)?;
+    let Json(request) = request.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+            &error.body_text(),
+            "Send api_base, api_key, model, and the enabled capabilities.",
+        )
+    })?;
+    let api_base = validate_colab_api_base(&request.api_base)?;
+    validate_colab_identity(&request.api_key, &request.model)?;
+    if !request.capabilities.chat {
+        return Err(api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "colab_chat_required",
+            "The registered Colab runtime must expose chat",
+            "Set capabilities.chat to true for an OpenAI-compatible runtime.",
+        ));
+    }
+
+    let session_id = Uuid::new_v4().to_string();
+    let heartbeat_token = Uuid::new_v4().to_string();
+    let session = ColabSession {
+        session_id: session_id.clone(),
+        heartbeat_token: heartbeat_token.clone(),
+        api_base,
+        api_key: request.api_key,
+        model: request.model,
+        capabilities: request.capabilities,
+        last_heartbeat: Instant::now(),
+    };
+    let mut current = state.colab_session.lock().map_err(|_| {
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "colab_registry_unavailable",
+            "The Colab registry is unavailable",
+            "Retry the registration request.",
+        )
+    })?;
+    *current = Some(session);
+
+    Ok(Json(ColabRegistrationResponse {
+        session_id,
+        heartbeat_token,
+        ttl_seconds: state.colab_ttl.as_secs(),
+    }))
+}
+
+async fn colab_heartbeat(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    request: Result<Json<ColabHeartbeatRequest>, JsonRejection>,
+) -> Result<Json<ColabStatusResponse>, ApiError> {
+    let supplied_token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let Json(request) = request.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+            &error.body_text(),
+            "Send the session_id and optional updated runtime configuration.",
+        )
+    })?;
+    let updated_api_base = request
+        .api_base
+        .as_deref()
+        .map(validate_colab_api_base)
+        .transpose()?;
+    if let Some(api_key) = request.api_key.as_deref() {
+        validate_colab_identity(api_key, request.model.as_deref().unwrap_or("local"))?;
+    }
+    if let Some(model) = request.model.as_deref() {
+        validate_colab_identity("not-needed", model)?;
+    }
+    if request
+        .capabilities
+        .as_ref()
+        .is_some_and(|capabilities| !capabilities.chat)
+    {
+        return Err(api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "colab_chat_required",
+            "The registered Colab runtime must expose chat",
+            "Set capabilities.chat to true.",
+        ));
+    }
+
+    let mut current = state.colab_session.lock().map_err(|_| {
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "colab_registry_unavailable",
+            "The Colab registry is unavailable",
+            "Retry the heartbeat request.",
+        )
+    })?;
+    if current
+        .as_ref()
+        .is_none_or(|session| session.last_heartbeat.elapsed() >= state.colab_ttl)
+    {
+        *current = None;
+        return Err(api_error(
+            StatusCode::UNAUTHORIZED,
+            "colab_session_expired",
+            "The Colab session is missing or expired",
+            "Register a new Colab session with the administrator token.",
+        ));
+    }
+    let Some(session) = current.as_mut() else {
+        return Err(api_error(
+            StatusCode::UNAUTHORIZED,
+            "colab_session_expired",
+            "The Colab session is missing or expired",
+            "Register a new Colab session with the administrator token.",
+        ));
+    };
+    if supplied_token != Some(session.heartbeat_token.as_str())
+        || request.session_id != session.session_id
+    {
+        return Err(api_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_colab_session",
+            "The Colab session credentials are invalid",
+            "Use the session ID and heartbeat token returned by registration.",
+        ));
+    }
+    if let Some(api_base) = updated_api_base {
+        session.api_base = api_base;
+    }
+    if let Some(api_key) = request.api_key {
+        session.api_key = api_key;
+    }
+    if let Some(model) = request.model {
+        session.model = model;
+    }
+    if let Some(capabilities) = request.capabilities {
+        session.capabilities = capabilities;
+    }
+    session.last_heartbeat = Instant::now();
+    drop(current);
+    Ok(Json(state.colab_status()))
+}
+
+async fn revoke_colab(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state.authorize_colab_admin(&headers)?;
+    let mut current = state.colab_session.lock().map_err(|_| {
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "colab_registry_unavailable",
+            "The Colab registry is unavailable",
+            "Retry the revocation request.",
+        )
+    })?;
+    *current = None;
+    Ok(Json(json!({"revoked": true})))
+}
+
+fn validate_colab_api_base(api_base: &str) -> Result<String, ApiError> {
+    let mut url = url::Url::parse(api_base).map_err(|_| {
+        api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_colab_api_base",
+            "The Colab API URL is invalid",
+            "Provide an HTTPS URL without credentials, query, or fragment.",
+        )
+    })?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_colab_api_base",
+            "The Colab API URL is not an allowed HTTPS endpoint",
+            "Provide an HTTPS URL without credentials, query, or fragment.",
+        ));
+    }
+    let path = url.path().trim_end_matches('/');
+    if path.is_empty() {
+        url.set_path("/v1");
+    } else if !path.ends_with("/v1") {
+        url.set_path(&format!("{path}/v1"));
+    }
+    Ok(url.to_string().trim_end_matches('/').to_owned())
+}
+
+fn validate_colab_identity(api_key: &str, model: &str) -> Result<(), ApiError> {
+    if api_key.is_empty() || api_key.len() > 512 || model.trim().is_empty() || model.len() > 200 {
+        return Err(api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_colab_runtime",
+            "The Colab API key or model name is invalid",
+            "Use a non-empty API key of at most 512 bytes and model name of at most 200 bytes.",
+        ));
+    }
+    Ok(())
 }
 
 async fn version() -> Json<Value> {
@@ -1836,7 +2222,10 @@ fn api_error(status: StatusCode, code: &str, error: &str, hint: &str) -> ApiErro
 #[cfg(test)]
 mod tests {
     use super::{router, AppState, IndicatorEntry, IndicatorRegistry, Observation};
-    use axum::{body::Body, http::Request};
+    use axum::{
+        body::Body,
+        http::{header, Request, StatusCode},
+    };
     use chrono::Utc;
     use irco_core::{
         Alert, AlertState, DataClass, DecisionRule, RuleCondition, RuleStatus, RulesDocument,
@@ -1845,6 +2234,7 @@ mod tests {
     use irco_knowledge::{CorpusEntry, EvidenceKind, KnowledgeBase};
     use rusqlite::Connection;
     use serde_json::Value;
+    use std::time::Duration;
     use tower::ServiceExt;
 
     fn test_app(token: Option<String>) -> axum::Router {
@@ -1856,6 +2246,41 @@ mod tests {
             rules: Vec::new(),
         };
         router(AppState::new(database, rules, token))
+    }
+
+    fn test_colab_app(ttl: Duration) -> axum::Router {
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let mut state = AppState::new(
+            database,
+            RulesDocument {
+                version: "test".to_owned(),
+                rules: Vec::new(),
+            },
+            None,
+        );
+        state.colab_admin_token = Some("admin-test-token".to_owned());
+        state.colab_ttl = ttl;
+        router(state)
+    }
+
+    fn colab_registration_body(api_base: &str) -> Value {
+        serde_json::json!({
+            "api_base": api_base,
+            "api_key": "test-colab-api-key",
+            "model": "qwen-test",
+            "capabilities": {
+                "chat": true,
+                "asr": false,
+                "tts": false,
+                "vision": false,
+                "vlm": false,
+                "image": false,
+                "multi": false,
+                "streaming": true
+            }
+        })
     }
 
     fn test_app_with_alert_rule() -> axum::Router {
@@ -2175,6 +2600,298 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn colab_registration_replaces_sessions_and_rotates_the_tunnel() {
+        let app = test_colab_app(Duration::from_secs(60));
+        let unauthorized = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer wrong-token")
+                    .body(Body::from(
+                        colab_registration_body("https://colab-one.example.test/v1").to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let invalid_url = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer admin-test-token")
+                    .body(Body::from(
+                        colab_registration_body("http://insecure.example.test/v1").to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid_url.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer admin-test-token")
+                    .body(Body::from(
+                        colab_registration_body("https://colab-one.example.test/v1").to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(first.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let first_session = first_body["session_id"].as_str().unwrap().to_owned();
+        let first_token = first_body["heartbeat_token"].as_str().unwrap().to_owned();
+
+        let heartbeat = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/heartbeat")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {first_token}"))
+                    .body(Body::from(
+                        serde_json::json!({
+                            "session_id": first_session,
+                            "api_base": "https://colab-two.example.test",
+                            "model": "qwen-updated"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(heartbeat.status(), StatusCode::OK);
+
+        let status = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/colab/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(status.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(status_body["available"], true);
+        assert_eq!(status_body["model"], "qwen-updated");
+        assert!(status_body.get("api_key").is_none());
+        assert!(status_body.get("api_base").is_none());
+
+        let capabilities = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/colab/capabilities")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let capabilities_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(capabilities.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(capabilities_body["capabilities"]["chat"], true);
+        assert_eq!(capabilities_body["capabilities"]["vision"], false);
+
+        let health = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let health_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(health.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(health_body["ai_available"], true);
+        assert_eq!(health_body["colab_available"], true);
+
+        let replacement = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer admin-test-token")
+                    .body(Body::from(
+                        colab_registration_body("https://colab-three.example.test/v1").to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let replacement_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(replacement.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_ne!(replacement_body["session_id"], first_session);
+
+        let stale_heartbeat = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/heartbeat")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {first_token}"))
+                    .body(Body::from(
+                        serde_json::json!({"session_id": first_session}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale_heartbeat.status(), StatusCode::UNAUTHORIZED);
+
+        let revoked = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::AUTHORIZATION, "Bearer admin-test-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(revoked.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn expired_colab_session_cannot_be_revived_by_its_old_heartbeat() {
+        let app = test_colab_app(Duration::from_millis(1));
+        let registered = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer admin-test-token")
+                    .body(Body::from(
+                        colab_registration_body("https://colab.example.test/v1").to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let registered_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(registered.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let session_id = registered_body["session_id"].as_str().unwrap();
+        let heartbeat_token = registered_body["heartbeat_token"].as_str().unwrap();
+        std::thread::sleep(Duration::from_millis(5));
+
+        let status = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/colab/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status_body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(status.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(status_body["available"], false);
+
+        let heartbeat = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/heartbeat")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {heartbeat_token}"))
+                    .body(Body::from(
+                        serde_json::json!({"session_id": session_id}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(heartbeat.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn colab_credentials_are_separate_from_the_general_api_token() {
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let mut state = AppState::new(
+            database,
+            RulesDocument {
+                version: "test".to_owned(),
+                rules: Vec::new(),
+            },
+            Some("general-api-token".to_owned()),
+        );
+        state.colab_admin_token = Some("separate-admin-token".to_owned());
+        let app = router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/colab/register")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer separate-admin-token")
+                    .body(Body::from(
+                        colab_registration_body("https://colab.example.test/v1").to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn health_reports_optional_services_as_unavailable() {
         let response = test_app(None)
             .oneshot(
@@ -2191,6 +2908,7 @@ mod tests {
             .unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["ai_available"], false);
+        assert_eq!(json["colab_available"], false);
         assert_eq!(json["knowledge_available"], false);
     }
 

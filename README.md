@@ -109,6 +109,8 @@ curl http://localhost:3080/health
 |----------|---------|
 | `IRCO_HOST` / `IRCO_PORT` | Bind address and port (default `3080`) |
 | `IRCO_API_TOKEN` | Enables bearer authentication on every route except `/health`, `/version`, and `/openapi.json` |
+| `IRCO_COLAB_ADMIN_TOKEN` | Separate bearer token required to register or revoke Colab; registration is disabled when absent |
+| `IRCO_COLAB_TTL_SECONDS` | Colab heartbeat expiry window in seconds (30–3600, default 180) |
 | `IRCO_CORPUS_PATH` | Overrides the default knowledge corpus location (`data/corpus.jsonl`) |
 | `COLAB_AICHAT_CONFIG` | Optional path to the live aichat config updated by the Colab heartbeat |
 
@@ -129,6 +131,7 @@ OpenAPI: [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
 | Data | `POST /api/v1/ingest`, `GET /api/v1/observations`, `GET /api/v1/observations/export` |
 | Alerts | `GET /api/v1/alerts`, `PATCH /api/v1/alerts/{id}`, `POST /api/v1/alerts/{id}/followup` |
 | Knowledge | `GET /api/v1/knowledge/search`, `POST /api/v1/assistant/chat`, `GET /api/v1/knowledge/health`, `GET /api/v1/knowledge/hazards`, `GET /api/v1/knowledge/indicator/{id}` |
+| Colab runtime | `POST` / `DELETE /api/v1/admin/colab/register`, `POST /api/v1/admin/colab/heartbeat`, `GET /api/v1/colab/status`, `GET /api/v1/colab/capabilities` |
 | Offline demo | `GET /api/v1/demo/scenarios`, `GET /api/v1/demo/replay`, `GET /api/v1/demo/scenario`, `POST /api/v1/demo/reset` |
 
 ## Data Classes — Never Mixed

@@ -4,7 +4,8 @@
 > **Server:** Rust / Axum on port 3080  
 > **Format:** JSON by default; observation exports may be CSV or JSONL.  
 > **Authentication:** Optional bearer token via `IRCO_API_TOKEN`; when set, all
-> routes except `/health`, `/version`, and `/openapi.json` require it.
+> routes except public health/version/OpenAPI and the separately authenticated
+> Colab registration/heartbeat routes require it.
 
 ---
 
@@ -31,6 +32,11 @@ routes later in this draft. Business routes are versioned under `/api/v1`;
 | GET | `/api/v1/health` |
 | GET | `/api/v1/rules` |
 | POST | `/api/v1/admin/rules/reload` |
+| POST | `/api/v1/admin/colab/register` |
+| DELETE | `/api/v1/admin/colab/register` |
+| POST | `/api/v1/admin/colab/heartbeat` |
+| GET | `/api/v1/colab/status` |
+| GET | `/api/v1/colab/capabilities` |
 | GET | `/api/v1/indicators` |
 | GET | `/api/v1/indicators/{indicator_id}` |
 | GET | `/api/v1/state` |
@@ -51,9 +57,10 @@ routes later in this draft. Business routes are versioned under `/api/v1`;
 | GET | `/api/v1/demo/scenario` |
 | POST | `/api/v1/demo/reset` |
 
-These are the only routes promised by the current implementation. The
-remaining route designs in this draft are planned and must not be used by a
-frontend until they are added to the server and OpenAPI.
+Colab registration additionally requires `IRCO_COLAB_ADMIN_TOKEN`; when
+`IRCO_API_TOKEN` is configured, both tokens are required for registration and
+revocation. The heartbeat uses the one-time session token returned during
+registration. Runtime status omits the upstream URL and API key.
 
 ---
 
@@ -70,11 +77,55 @@ Health check endpoint. Always available.
   "version": "0.1.0",
   "uptime_seconds": 3600,
   "database": "connected",
-  "observations_count": 124500,
   "rules_loaded": 12,
-  "colab_available": false
+  "indicators_loaded": 24,
+  "ai_available": false,
+  "colab_available": false,
+  "knowledge_available": true
 }
 ```
+
+---
+
+### Colab runtime registration and status
+
+The VPS registers a Colab endpoint using HTTPS only. Registration replaces
+any current session and returns a new session ID and heartbeat token; the old
+token cannot refresh the replacement session. `IRCO_COLAB_TTL_SECONDS`
+controls the in-memory liveness window (30–3600 seconds, default 180). A
+process restart clears the registration and requires a new registration.
+
+`POST /api/v1/admin/colab/register` requires `IRCO_COLAB_ADMIN_TOKEN` and JSON:
+```json
+{
+  "api_base": "https://colab.example/v1",
+  "api_key": "runtime-key",
+  "model": "qwen-instruct",
+  "capabilities": {
+    "chat": true,
+    "asr": false,
+    "tts": false,
+    "vision": false,
+    "vlm": false,
+    "image": false,
+    "multi": false,
+    "streaming": true
+  }
+}
+```
+
+The `api_key` is stored only in process memory and is never returned by status
+or capability endpoints. The registration response contains a bearer
+`heartbeat_token`; send it to `POST /api/v1/admin/colab/heartbeat` together
+with `session_id`. A heartbeat may update the URL, model, key, and capabilities.
+An expired, revoked, or replaced session cannot be revived with an old token.
+`DELETE /api/v1/admin/colab/register` revokes the active session.
+
+`GET /api/v1/colab/status` and `GET /api/v1/colab/capabilities` expose current
+liveness, model, enabled modules, and remaining TTL, but not the tunnel URL or
+credentials. `/health` reports the same TTL-based liveness in
+`colab_available` and `ai_available`. The registry is currently in memory;
+after a VPS restart it is unavailable until Colab registers again.
 
 ---
 
