@@ -1,0 +1,6 @@
+{
+  "name": "Anatomical X-Ray Explorer",
+  "description": "Interactive 3D anatomical X-ray medical visualization of the human male body with toggleable skeletal, muscular, cardiovascular, nervous, and holographic skin systems.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

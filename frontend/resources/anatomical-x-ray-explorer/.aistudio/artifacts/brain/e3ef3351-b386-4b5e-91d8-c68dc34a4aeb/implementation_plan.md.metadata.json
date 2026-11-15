@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for an interactive 3D anatomical X-ray medical visualization built with Three.js and React, featuring five toggleable anatomical systems, raycast clinical inspection, a synchronized top-right orientation silhouette, dynamic BPM/arterial flow kinematics, and a collapsible bottom control dock.",
+  "updatedAt":  "2026-11-15T14:57:05.224940832Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
