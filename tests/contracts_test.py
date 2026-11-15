@@ -1,5 +1,6 @@
 import json
 import hashlib
+import re
 import unittest
 from pathlib import Path
 
@@ -92,6 +93,55 @@ class ContractTests(unittest.TestCase):
         self.assertEqual([{"bearerAuth": []}], expected["security"])
         for path in ("/health", "/version", "/openapi.json"):
             self.assertEqual([], expected["paths"][path]["get"]["security"])
+        public_paths = {"/health", "/version", "/openapi.json"}
+        for path, operations in expected["paths"].items():
+            for operation in operations.values():
+                if not isinstance(operation, dict) or "responses" not in operation:
+                    continue
+                expected_security = [] if path in public_paths else expected["security"]
+                self.assertEqual(expected_security, operation.get("security", expected["security"]))
+
+    def test_route_paths_match_router_openapi_and_implemented_contract(self):
+        source = (ROOT / "crates" / "irco-api" / "src" / "lib.rs").read_text(
+            encoding="utf-8"
+        )
+        router_routes = {
+            (re.sub(r":([A-Za-z0-9_]+)", r"{\1}", path), method)
+            for path, method in re.findall(
+                r'\.route\(\s*"([^"]+)"\s*,\s*(get|post|patch)\s*\(',
+                source,
+                re.DOTALL,
+            )
+        }
+        openapi = yaml.safe_load(
+            (ROOT / "docs" / "api" / "openapi.yaml").read_text(encoding="utf-8")
+        )
+        openapi_routes = {
+            (path, method)
+            for path, operations in openapi["paths"].items()
+            for method in ("get", "post", "patch")
+            if method in operations
+        }
+        contract = (ROOT / "contracts" / "api.md").read_text(encoding="utf-8")
+        implemented_section = contract.split(
+            "## Implemented API v0.1 routes", 1
+        )[1].split("\n---", 1)[0]
+        contract_routes = {
+            (path, method.lower())
+            for method, path in re.findall(
+                r"\|\s*(GET|POST|PATCH)\s*\|\s*`([^`]+)`\s*\|",
+                implemented_section,
+            )
+        }
+        self.assertEqual(router_routes, openapi_routes)
+        self.assertEqual(router_routes, contract_routes)
+        self.assertTrue(
+            all(
+                path.startswith("/api/v1/")
+                for path, _ in router_routes
+                if path not in {"/health", "/version", "/openapi.json"}
+            )
+        )
 
     def test_acquisition_manifest_conforms_when_present(self):
         manifest_path = ROOT / "data" / "manifests" / "acquisition.json"

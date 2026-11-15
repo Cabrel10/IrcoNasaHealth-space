@@ -1,5 +1,11 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use irco_core::{DataClass, Observation, ObservationQuality};
+use irco_core::{DataClass, DecisionRule, Observation, ObservationQuality, VigilanceLevel};
+use irco_decisions::{
+    engine::{
+        evaluate, evaluate_composite_rules, evaluate_missing_data_rules, evaluate_temporal_rules,
+    },
+    vigilance::compute_vigilance,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -43,6 +49,14 @@ pub struct DemoReplay {
     pub disclaimer: &'static str,
 }
 
+#[derive(Debug, Serialize)]
+pub struct EvaluatedDemoReplay {
+    #[serde(flatten)]
+    pub replay: DemoReplay,
+    pub vigilance: VigilanceLevel,
+    pub triggered_rules: Vec<String>,
+}
+
 pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
     if !(1..=SCENARIO_DAYS).contains(&day) {
         return Err(format!("day must be between 1 and {SCENARIO_DAYS}"));
@@ -54,7 +68,8 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
         + Duration::days(i64::from(day - 1));
     let (subject, source, values) = match scenario {
         DemoScenario::A01 => {
-            let progress = f64::from(day - 1) / f64::from(SCENARIO_DAYS - 1);
+            let progress =
+                (f64::from(day.saturating_sub(95)) / f64::from(SCENARIO_DAYS - 95)).clamp(0.0, 1.0);
             (
                 "A-01",
                 "SYNTHETIC_A01",
@@ -151,17 +166,82 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
     })
 }
 
+pub fn replay_with_rules(
+    scenario: DemoScenario,
+    day: u32,
+    rules: &[DecisionRule],
+) -> Result<EvaluatedDemoReplay, String> {
+    let current_replay = replay(scenario, day)?;
+    let mut history = Vec::new();
+    let mut current_triggered_rules = Vec::new();
+    for history_day in 1..=day {
+        let day_replay = if history_day == day {
+            current_replay.observations.clone()
+        } else {
+            replay(scenario, history_day)?.observations
+        };
+        let mut day_history = history.clone();
+        day_history.extend(day_replay.iter().cloned());
+        let mut day_triggers = Vec::new();
+        for observation in &day_replay {
+            let point_result = evaluate(rules, observation).map_err(|error| error.to_string())?;
+            day_triggers.extend(point_result.triggered);
+            let temporal_result = evaluate_temporal_rules(rules, &day_history, observation)
+                .map_err(|error| error.to_string())?;
+            day_triggers.extend(temporal_result.triggered);
+        }
+        let day_timestamp = day_replay
+            .first()
+            .map_or(current_replay.timestamp, |observation| {
+                observation.timestamp
+            });
+        let subject_id = day_replay
+            .first()
+            .and_then(|observation| observation.subject_id.as_deref())
+            .unwrap_or(match scenario {
+                DemoScenario::A01 => "A-01",
+                DemoScenario::Nominal => "N-01",
+                DemoScenario::Dropout => "D-01",
+            });
+        let missing_data = evaluate_missing_data_rules(
+            rules,
+            &day_history,
+            subject_id,
+            &DataClass::Synthetic,
+            day_timestamp,
+        )
+        .map_err(|error| error.to_string())?;
+        day_triggers.extend(missing_data.triggered);
+        if history_day == day {
+            current_triggered_rules = day_triggers;
+        }
+        history.extend(day_replay);
+    }
+    let composite =
+        evaluate_composite_rules(rules, &current_triggered_rules, &DataClass::Synthetic)
+            .map_err(|error| error.to_string())?;
+    current_triggered_rules.extend(composite.triggered);
+    current_triggered_rules.sort();
+    current_triggered_rules.dedup();
+    let vigilance =
+        compute_vigilance(rules, &current_triggered_rules).map_err(|error| error.to_string())?;
+
+    Ok(EvaluatedDemoReplay {
+        replay: current_replay,
+        vigilance,
+        triggered_rules: current_triggered_rules,
+    })
+}
+
 fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{replay, DemoScenario};
+    use super::{replay, replay_with_rules, DemoScenario};
     use irco_core::VigilanceLevel;
-    use irco_decisions::{
-        engine::evaluate_temporal_rules, rules::load_rules, vigilance::compute_vigilance,
-    };
+    use irco_decisions::rules::load_rules;
 
     #[test]
     fn a01_ends_at_the_specified_synthetic_values() {
@@ -184,30 +264,17 @@ mod tests {
     fn a01_replay_moves_from_green_to_demo_amber_then_red() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../rules/rules.json");
         let rules = load_rules(path).unwrap();
-        let mut history = Vec::new();
-        let mut first_amber_day = None;
-        let mut first_red_day = None;
-
-        for day in 1..=124 {
-            let replay = replay(DemoScenario::A01, day).unwrap();
-            let current = replay
-                .observations
-                .into_iter()
-                .find(|observation| observation.indicator == "heart_rate")
-                .unwrap();
-            history.push(current.clone());
-            let evaluation = evaluate_temporal_rules(&rules.rules, &history, &current).unwrap();
-            let level = compute_vigilance(&rules.rules, &evaluation.triggered).unwrap();
-            if level == VigilanceLevel::Amber && first_amber_day.is_none() {
-                first_amber_day = Some(day);
-            }
-            if level == VigilanceLevel::Red && first_red_day.is_none() {
-                first_red_day = Some(day);
-            }
+        for (day, expected) in [
+            (1, VigilanceLevel::Green),
+            (96, VigilanceLevel::Green),
+            (97, VigilanceLevel::Amber),
+            (116, VigilanceLevel::Amber),
+            (117, VigilanceLevel::Red),
+            (124, VigilanceLevel::Red),
+        ] {
+            let result = replay_with_rules(DemoScenario::A01, day, &rules.rules).unwrap();
+            assert_eq!(result.vigilance, expected, "unexpected level on day {day}");
         }
-
-        assert_eq!(first_amber_day, Some(7));
-        assert_eq!(first_red_day, Some(39));
     }
 
     #[test]

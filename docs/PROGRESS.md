@@ -42,8 +42,9 @@ requested mission.
   currently enabled illustrative rules are restricted to
   synthetic data. The heart-rate missing-data rule is illustrative, enabled
   only for synthetic data, and uses a 36-hour demo freshness interval; composite
-  rules remain disabled. A-01 replay tests demonstrate green, amber on day 7
-  and red on day 39.
+  rules remain disabled. A-01 now holds nominal values through day 94, then
+  drifts to the specified day-124 values; configured evaluation transitions
+  from green on day 1 to amber on day 97 and red on day 117.
 - Integrated missing-data evaluation into the health-state API. `as_of` is an
   optional UTC query parameter for deterministic replay; indicator state now
   includes `data_status`, the response lists missing indicators and triggered
@@ -57,6 +58,23 @@ requested mission.
   illustrative relationship has not been validated; enabling it would not
   establish a medical correlation. Composite alert persistence during ingestion
   remains unimplemented.
+- Demo replay now computes the requested day's vigilance and triggered rules
+  through the active deterministic engine without persisting observations.
+  The new A-01 timeline was tested through the HTTP replay endpoint at days 1,
+  97, 117, and 124.
+- Moved knowledge, assistant, and demo operations under `/api/v1` so the
+  implemented business routes share one versioned prefix; health/version and
+  OpenAPI remain root-level service endpoints. Updated the OpenAPI paths,
+  walkthrough, and API route inventory together.
+- Dashboard route audit: state overview, observation queries, alert lifecycle,
+  demo replay, knowledge search, and citation-preserving assistant are
+  implemented. Indicator trend/history with personal baseline and threshold
+  metadata is not yet a single endpoint; dedicated decision-chain explanation,
+  medical report, environment/radiation and mission context endpoints, SSE,
+  Colab relay, image upload, static frontend hosting, and frozen demo bundle
+  remain missing. CORS and standard JSON errors exist. Auth is optional, but
+  when `IRCO_API_TOKEN` is configured browser requests need a trusted same-origin
+  proxy; the token must not be embedded in frontend code.
 - Documented the currently implemented API subset separately from the larger
   planned contract, and added an offline demo walkthrough with executable
   requests. The planned routes are not represented as implemented features.
@@ -107,11 +125,10 @@ requested mission.
 - `python3 scripts/build_pivot.py` — accepted 47,767 pivot observations and logged 5 rejected/deferred source rows.
 - `python3 scripts/import_pivot.py --dry-run --batch-size 100` — validated all 47,767 combined NASA/NOAA rows.
 - End-to-end HTTP test on a temporary local SQLite database — imported 47,767 rows in 478 batches, retrieved NASA and NOAA samples with `data_class=measured_real`, confirmed suspect NASA timestamps do not create alerts, then confirmed persistence after API restart. Temporary database was removed.
-- Live API smoke test using an isolated temporary SQLite database: `/health`
-  reported knowledge available, `/knowledge/health` reported nine BM25 entries,
-  and `/search` plus `/assistant` returned a CSA Radi-N2 summary with source
-  URL, section, document date and an explicit `curated_summary` label. The
-  process and database were removed afterward.
+- Earlier live API smoke test using a temporary SQLite database verified
+  health, nine BM25 entries, and a CSA Radi-N2 citation through the then-root
+  knowledge/search/assistant paths. Those business routes have since moved
+  under `/api/v1`; the process and database were removed afterward.
 - `CARGO_BUILD_JOBS=1 cargo clippy --manifest-path /home/ubuntu/webapp/nase/Cargo.toml --workspace --all-targets -- -D warnings` — passed after resolving two existing lint findings.
 - A generic `unittest discover` from the unrelated shell working directory selected installed site-packages tests and failed due to their missing dependency; the repository's targeted contract test command passed.
 - Previous verified rerun: Rust workspace tests (57), `cargo fmt --check` and workspace
@@ -125,6 +142,10 @@ requested mission.
   synchronization.
 - Latest composite-rule verification: all 67 Rust workspace tests, workspace
   Clippy with `-D warnings`, formatting check, and all 7 contract tests passed.
+- Latest dashboard corrections: 24 `irco-api` tests pass, including live HTTP
+  replay assertions for A-01 green/amber/red at days 1/97/117 and final values
+  on day 124. All 8 Python contract tests pass, including a new exact route
+  inventory check across Axum, OpenAPI, and this contract.
 - Rebuilt the pivot after adding the CELSS manifest entry: 47,767 observations
   accepted, 5 records rejected/deferred; offline importer dry-run validated all
   47,767 rows without sending batches.

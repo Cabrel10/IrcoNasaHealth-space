@@ -18,7 +18,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/DemoReplay"
   /health:
     get:
       operationId: getHealth
@@ -420,7 +420,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-  /search:
+  /api/v1/knowledge/search:
     get:
       operationId: searchScientificCorpus
       parameters:
@@ -456,7 +456,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-  /assistant:
+  /api/v1/assistant/chat:
     post:
       operationId: explainWithCitations
       description: Extractive evidence fallback; never sets vigilance and always states the decision-support disclaimer.
@@ -492,7 +492,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-  /knowledge/health:
+  /api/v1/knowledge/health:
     get:
       operationId: getKnowledgeHealth
       responses:
@@ -507,7 +507,7 @@ paths:
                   available: { type: boolean }
                   documents: { type: integer }
                   retrieval: { type: string }
-  /knowledge/hazards:
+  /api/v1/knowledge/hazards:
     get:
       operationId: listKnowledgeHazards
       responses:
@@ -521,7 +521,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-  /knowledge/indicator/{indicator_id}:
+  /api/v1/knowledge/indicator/{indicator_id}:
     get:
       operationId: getIndicatorKnowledge
       parameters:
@@ -543,10 +543,9 @@ paths:
                   hits:
                     type: array
                     items: { type: object }
-  /demo/scenarios:
+  /api/v1/demo/scenarios:
     get:
       operationId: listDemoScenarios
-      security: []
       responses:
         "200":
           description: Offline synthetic scenarios available for replay.
@@ -555,10 +554,9 @@ paths:
               schema:
                 type: array
                 items: { type: object }
-  /demo/replay:
+  /api/v1/demo/replay:
     get:
       operationId: replayDemoDay
-      security: []
       parameters:
         - in: query
           name: scenario
@@ -570,11 +568,11 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 124, default: 1 }
       responses:
         "200":
-          description: Reproducible day of a synthetic scenario.
+          description: Reproducible synthetic observations and vigilance derived from configured deterministic rules for the requested day.
           content:
             application/json:
-              schema: { type: object }
-  /demo/scenario:
+              schema: { $ref: "#/components/schemas/DemoReplay" }
+  /api/v1/demo/scenario:
     get:
       operationId: getDemoScenarioDay
       parameters:
@@ -591,8 +589,8 @@ paths:
           description: Alias for replaying a scenario day.
           content:
             application/json:
-              schema: { type: object }
-  /demo/reset:
+              schema: { $ref: "#/components/schemas/DemoReplay" }
+  /api/v1/demo/reset:
     post:
       operationId: resetDemoReplay
       parameters:
@@ -606,13 +604,29 @@ paths:
           description: Return day one of a scenario; replay is stateless.
           content:
             application/json:
-              schema: { type: object }
+              schema: { $ref: "#/components/schemas/DemoReplay" }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
   schemas:
+    DemoReplay:
+      type: object
+      required:
+        [scenario, mission_day, timestamp, observations, missing_indicators, data_class, disclaimer, vigilance, triggered_rules]
+      properties:
+        scenario: { type: string, enum: [a01, nominal, dropout] }
+        mission_day: { type: integer, minimum: 1, maximum: 124 }
+        timestamp: { type: string, format: date-time }
+        observations:
+          type: array
+          items: { $ref: "#/components/schemas/Observation" }
+        missing_indicators: { type: array, items: { type: string } }
+        data_class: { type: string, enum: [synthetic] }
+        disclaimer: { type: string }
+        vigilance: { type: string, enum: [green, amber, red, no_data] }
+        triggered_rules: { type: array, items: { type: string } }
     Health:
       type: object
       required:

@@ -380,18 +380,18 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/alerts", get(alerts))
         .route("/api/v1/alerts/:alert_id", patch(transition))
         .route("/api/v1/alerts/:alert_id/followup", post(record_followup))
-        .route("/search", get(search))
-        .route("/assistant", post(assistant))
-        .route("/knowledge/health", get(knowledge_health))
-        .route("/knowledge/hazards", get(knowledge_hazards))
+        .route("/api/v1/knowledge/search", get(search))
+        .route("/api/v1/assistant/chat", post(assistant))
+        .route("/api/v1/knowledge/health", get(knowledge_health))
+        .route("/api/v1/knowledge/hazards", get(knowledge_hazards))
         .route(
-            "/knowledge/indicator/:indicator_id",
+            "/api/v1/knowledge/indicator/:indicator_id",
             get(knowledge_indicator),
         )
-        .route("/demo/scenarios", get(demo_scenarios))
-        .route("/demo/replay", get(demo_replay))
-        .route("/demo/scenario", get(demo_replay))
-        .route("/demo/reset", post(demo_reset))
+        .route("/api/v1/demo/scenarios", get(demo_scenarios))
+        .route("/api/v1/demo/replay", get(demo_replay))
+        .route("/api/v1/demo/scenario", get(demo_replay))
+        .route("/api/v1/demo/reset", post(demo_reset))
         .route_layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .layer(CorsLayer::permissive())
         .with_state(state)
@@ -1567,8 +1567,9 @@ async fn demo_scenarios() -> Json<Vec<DemoScenarioSummary>> {
 }
 
 async fn demo_replay(
+    State(state): State<AppState>,
     query: Result<Query<DemoQuery>, QueryRejection>,
-) -> Result<Json<demo::DemoReplay>, Response> {
+) -> Result<Json<demo::EvaluatedDemoReplay>, Response> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1591,19 +1592,30 @@ async fn demo_replay(
         )
     })?;
     let day = query.day.unwrap_or(1);
-    demo::replay(scenario, day).map(Json).map_err(|error| {
+    let rules = state.rules_snapshot().map_err(|error| {
         api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_demo_day",
-            &error,
-            "Choose a mission day from 1 through 124.",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "rules_unavailable",
+            &error.to_string(),
+            "Check the loaded rule configuration.",
         )
-    })
+    })?;
+    demo::replay_with_rules(scenario, day, &rules.rules)
+        .map(Json)
+        .map_err(|error| {
+            api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_demo_day",
+                &error,
+                "Choose a mission day from 1 through 124.",
+            )
+        })
 }
 
 async fn demo_reset(
+    State(state): State<AppState>,
     query: Result<Query<DemoQuery>, QueryRejection>,
-) -> Result<Json<demo::DemoReplay>, Response> {
+) -> Result<Json<demo::EvaluatedDemoReplay>, Response> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1625,14 +1637,24 @@ async fn demo_reset(
             "Choose a01, nominal, or dropout.",
         )
     })?;
-    demo::replay(scenario, 1).map(Json).map_err(|error| {
+    let rules = state.rules_snapshot().map_err(|error| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "demo_reset_failed",
-            &error,
-            "Report this error; the deterministic scenario should be available offline.",
+            "rules_unavailable",
+            &error.to_string(),
+            "Check the loaded rule configuration.",
         )
-    })
+    })?;
+    demo::replay_with_rules(scenario, 1, &rules.rules)
+        .map(Json)
+        .map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "demo_reset_failed",
+                &error,
+                "Report this error; the deterministic scenario should be available offline.",
+            )
+        })
 }
 
 async fn search(
@@ -2175,7 +2197,7 @@ mod tests {
         assert!(spec["paths"]["/api/v1/alerts"].is_object());
         assert!(spec["paths"]["/api/v1/admin/rules/reload"].is_object());
         assert!(spec["paths"]["/api/v1/state"].is_object());
-        assert!(spec["paths"]["/demo/replay"].is_object());
+        assert!(spec["paths"]["/api/v1/demo/replay"].is_object());
     }
 
     #[tokio::test]
@@ -2197,7 +2219,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/demo/scenarios")
+                    .uri("/api/v1/demo/scenarios")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2504,23 +2526,51 @@ mod tests {
 
     #[tokio::test]
     async fn demo_replay_is_deterministic_and_labels_synthetic_data() {
-        let response = test_app(None)
-            .oneshot(
-                Request::builder()
-                    .uri("/demo/replay?scenario=a01&day=124")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let replay: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(replay["data_class"], "synthetic");
-        assert_eq!(replay["observations"][0]["value"], 108.0);
-        assert!(replay["disclaimer"].as_str().unwrap().contains("Synthetic"));
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let rules_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../rules/rules.json");
+        let app = router(AppState::new(
+            database,
+            irco_decisions::rules::load_rules(rules_path).unwrap(),
+            None,
+        ));
+        let mut responses = Vec::new();
+        for day in [1, 97, 117, 124] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/api/v1/demo/replay?scenario=a01&day={day}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            responses.push(serde_json::from_slice::<Value>(&body).unwrap());
+        }
+        assert_eq!(responses[0]["vigilance"], "green");
+        assert_eq!(responses[1]["vigilance"], "amber");
+        assert_eq!(responses[2]["vigilance"], "red");
+        assert_eq!(responses[3]["data_class"], "synthetic");
+        assert_eq!(responses[3]["observations"][0]["value"], 108.0);
+        assert_eq!(
+            responses[3]["observations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|observation| observation["indicator"] == "sleep_duration")
+                .unwrap()["value"],
+            4.2
+        );
+        assert!(responses[3]["disclaimer"]
+            .as_str()
+            .unwrap()
+            .contains("Synthetic"));
     }
 
     #[tokio::test]
@@ -2555,7 +2605,7 @@ mod tests {
         let response = router(state)
             .oneshot(
                 Request::builder()
-                    .uri("/search?q=radiation&indicator=radiation_dose_daily")
+                    .uri("/api/v1/knowledge/search?q=radiation&indicator=radiation_dose_daily")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2584,7 +2634,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/assistant")
+                    .uri("/api/v1/assistant/chat")
                     .header("content-type", "application/json")
                     .body(Body::from(
                         serde_json::json!({"question": "Why is sleep relevant?"}).to_string(),

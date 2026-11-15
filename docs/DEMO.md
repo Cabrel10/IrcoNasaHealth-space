@@ -19,7 +19,7 @@ In another terminal:
 ```bash
 curl -sS http://127.0.0.1:3080/health
 curl -sS http://127.0.0.1:3080/openapi.json
-curl -sS http://127.0.0.1:3080/demo/scenarios
+curl -sS http://127.0.0.1:3080/api/v1/demo/scenarios
 ```
 
 If the server was started with `IRCO_API_TOKEN`, add
@@ -32,20 +32,21 @@ Read day 1 and the final A-01 day. These endpoints are deterministic and do not
 write to the observation store:
 
 ```bash
-curl -sS 'http://127.0.0.1:3080/demo/replay?scenario=a01&day=1'
-curl -sS 'http://127.0.0.1:3080/demo/replay?scenario=a01&day=124'
-curl -sS 'http://127.0.0.1:3080/demo/scenario?name=nominal&day=124'
-curl -sS 'http://127.0.0.1:3080/demo/scenario?name=dropout&day=22'
-curl -sS -X POST 'http://127.0.0.1:3080/demo/reset?scenario=a01'
+curl -sS 'http://127.0.0.1:3080/api/v1/demo/replay?scenario=a01&day=1'
+curl -sS 'http://127.0.0.1:3080/api/v1/demo/replay?scenario=a01&day=97'
+curl -sS 'http://127.0.0.1:3080/api/v1/demo/replay?scenario=a01&day=117'
+curl -sS 'http://127.0.0.1:3080/api/v1/demo/replay?scenario=a01&day=124'
+curl -sS 'http://127.0.0.1:3080/api/v1/demo/scenario?name=nominal&day=124'
+curl -sS 'http://127.0.0.1:3080/api/v1/demo/scenario?name=dropout&day=22'
+curl -sS -X POST 'http://127.0.0.1:3080/api/v1/demo/reset?scenario=a01'
 ```
 
 The A-01 endpoint ends at 108 bpm, 4.2 hours of sleep and fatigue 8/10 on day
-124. The dropout scenario reports missing indicators without filling them.
-The stored-observation engine supports absolute thresholds, numeric
-`context.individual_baseline` deviations and signed trend-slope rules. Other
-condition types remain explicitly unsupported.
-Illustrative rules are not validated medical criteria, and these read-only
-replay endpoints do not compute alert-level transitions.
+124. Its configured illustrative rules report green on day 1, amber on day 97
+and red on day 117. The response includes the deterministic `vigilance` and
+`triggered_rules` for the requested day; replay remains read-only. The dropout
+scenario reports missing indicators without filling them. All demo thresholds
+are synthetic-only and are not validated medical criteria.
 
 ## Import cached real observations
 
@@ -76,7 +77,7 @@ documented unavailable or source-not-found result. Data storage, deterministic
 rules and scenario replay remain independent of knowledge and AI services.
 
 ```bash
-curl -sS http://127.0.0.1:3080/knowledge/health
-curl -sS 'http://127.0.0.1:3080/search?q=radiation&limit=3'
+curl -sS http://127.0.0.1:3080/api/v1/knowledge/health
+curl -sS 'http://127.0.0.1:3080/api/v1/knowledge/search?q=radiation&limit=3'
 ```
 

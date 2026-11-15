@@ -48,7 +48,7 @@
       "condition": {
         "type": "persistent_deviation",
         "params": {
-          "deviation_percent": 20,
+          "deviation_percent": 45,
           "persistence_count": 5,
           "window_days": 5,
           "deviation_direction": "above"
@@ -58,7 +58,7 @@
       "data_class_filter": ["synthetic"],
       "vigilance_level": "red",
       "action": "escalate_medical",
-      "justification_template": "Heart rate persistently {deviation_percent}% above baseline for {persistence_count} consecutive readings over {window} days.",
+      "justification_template": "Synthetic demo heart rate persistently {deviation_percent}% above its configured baseline for {persistence_count} consecutive readings.",
       "status": "illustrative",
       "enabled": true,
       "priority": 80

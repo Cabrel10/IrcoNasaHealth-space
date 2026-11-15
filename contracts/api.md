@@ -16,6 +16,47 @@ http://localhost:3080/api/v1
 
 ---
 
+## Implemented API v0.1 routes
+
+The following inventory is the implemented surface, distinct from the planned
+routes later in this draft. Business routes are versioned under `/api/v1`;
+`/health`, `/version`, and `/openapi.json` are root-level service endpoints.
+`docs/api/openapi.yaml` describes their request and response schemas.
+
+| Method | Path |
+|---|---|
+| GET | `/health` |
+| GET | `/version` |
+| GET | `/openapi.json` |
+| GET | `/api/v1/health` |
+| GET | `/api/v1/rules` |
+| POST | `/api/v1/admin/rules/reload` |
+| GET | `/api/v1/indicators` |
+| GET | `/api/v1/indicators/{indicator_id}` |
+| GET | `/api/v1/state` |
+| GET | `/api/v1/state/{subject_id}` |
+| GET | `/api/v1/observations` |
+| GET | `/api/v1/observations/export` |
+| POST | `/api/v1/ingest` |
+| GET | `/api/v1/alerts` |
+| PATCH | `/api/v1/alerts/{alert_id}` |
+| POST | `/api/v1/alerts/{alert_id}/followup` |
+| GET | `/api/v1/knowledge/search` |
+| POST | `/api/v1/assistant/chat` |
+| GET | `/api/v1/knowledge/health` |
+| GET | `/api/v1/knowledge/hazards` |
+| GET | `/api/v1/knowledge/indicator/{indicator_id}` |
+| GET | `/api/v1/demo/scenarios` |
+| GET | `/api/v1/demo/replay` |
+| GET | `/api/v1/demo/scenario` |
+| POST | `/api/v1/demo/reset` |
+
+These are the only routes promised by the current implementation. The
+remaining route designs in this draft are planned and must not be used by a
+frontend until they are added to the server and OpenAPI.
+
+---
+
 ## 1. System
 
 ### `GET /health`
@@ -435,16 +476,25 @@ BM25 search over the scientific knowledge base.
 **Response 200:**
 ```json
 {
-  "results": [
+  "available": true,
+  "source_not_found": false,
+  "hits": [
     {
-      "score": 12.4,
-      "title": "Radiation Effects on the Cardiovascular System",
-      "source": "NASA HRP — Five Hazards",
-      "section": "Space Radiation > Cardiovascular",
-      "url": "https://www.nasa.gov/hrp/...",
-      "excerpt": "...",
+      "score": 2.4,
+      "evidence": "Curated summary of the source content.",
+      "evidence_kind": "curated_summary",
+      "citation": {
+        "document_id": "nasa-hrp-hazards",
+        "title": "NASA HRP Five Hazards",
+        "publisher": "NASA",
+        "url": "https://www.nasa.gov/hrp/",
+        "section": "Radiation",
+        "page_numbers": null,
+        "document_date": null
+      },
       "hazard": "radiation",
-      "indicators_related": ["radiation_dose_daily", "heart_rate"]
+      "indicators_related": ["radiation_dose_daily"],
+      "confidence": "curated_summary"
     }
   ]
 }
@@ -454,7 +504,8 @@ BM25 search over the scientific knowledge base.
 
 ### `GET /api/v1/knowledge/sources`
 
-List indexed knowledge sources.
+Planned; this endpoint is not implemented. Use `GET /api/v1/knowledge/health`
+and `GET /api/v1/knowledge/search` in the current API.
 
 **Response 200:**
 ```json
@@ -474,42 +525,36 @@ List indexed knowledge sources.
 
 ### `POST /api/v1/assistant/chat`
 
-Send a message to the scientific assistant. The assistant receives read-only context from the health engine.
+Ask the offline extractive assistant to find and cite relevant corpus evidence.
+It does not receive personal health state, call an LLM, or modify vigilance.
 
 **Request:**
 ```json
 {
-  "message": "Why is A-01's heart rate increasing?",
-  "subject_id": "A-01",
-  "include_health_context": true,
-  "include_knowledge_context": true
+  "question": "What does NASA say about radiation?",
+  "hazard": "radiation",
+  "indicator": "radiation_dose_daily"
 }
 ```
 
 **Response 200:**
 ```json
 {
-  "response": "...",
-  "sources_cited": [
-    { "title": "...", "url": "...", "section": "..." }
+  "answer": "The local scientific corpus contains this curated source summary: ...",
+  "citations": [
+    {
+      "document_id": "csa-space-radiation-effects",
+      "title": "How does radiation affect the human body in space?",
+      "publisher": "Canadian Space Agency",
+      "url": "https://www.asc-csa.gc.ca/eng/astronauts/space-medicine/radiation.asp",
+      "section": "Space radiation exposure and monitoring",
+      "page_numbers": null,
+      "document_date": "2006-08-18"
+    }
   ],
-  "health_context_used": {
-    "subject_id": "A-01",
-    "vigilance": "amber",
-    "rules_triggered": ["HR_TREND_002"]
-  },
-  "model": "colab-t4",
-  "fallback_used": false
-}
-```
-
-**Response 200 (fallback):**
-```json
-{
-  "response": "Model unavailable. Based on knowledge base search: ...",
-  "sources_cited": [ ... ],
-  "model": null,
-  "fallback_used": true
+  "source_not_found": false,
+  "disclaimer": "Decision support, not a diagnosis.",
+  "provider": "extractive_fallback"
 }
 ```
 
