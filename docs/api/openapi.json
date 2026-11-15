@@ -516,6 +516,202 @@
         }
       }
     },
+    "/api/v1/dashboard": {
+      "get": {
+        "operationId": "getDashboard",
+        "description": "Returns a complete subject dashboard. Demo scenarios are synthetic and stateless; hazards and routine remain no_data/unavailable until implemented.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject",
+            "schema": {
+              "type": "string",
+              "default": "A-01"
+            },
+            "description": "Subject identifier; alias for subject_id."
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "data_class",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "measured_real",
+                "analog",
+                "synthetic"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "a01",
+                "nominal",
+                "dropout"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 124
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete dashboard snapshot for one subject and one data class.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                },
+                "example": {
+                  "subject_id": "A-01",
+                  "mission": {
+                    "mission_id": "IRCO-DEMO",
+                    "mission_day": 1,
+                    "environment": "deep_space",
+                    "earth_delay_min": 12,
+                    "mode": "autonomous",
+                    "simulated": true
+                  },
+                  "global": {
+                    "level": "green",
+                    "confidence": "low_synthetic",
+                    "badges": [
+                      "simulated"
+                    ]
+                  },
+                  "indicators": [
+                    {
+                      "id": "heart_rate",
+                      "value": 62,
+                      "unit": "bpm",
+                      "last_updated": "2026-01-01T06:00:00Z",
+                      "trend": "insufficient_data",
+                      "quality": "synthetic",
+                      "measurement_quality": "valid",
+                      "data_class": "synthetic",
+                      "status": "fresh",
+                      "data_status": "fresh",
+                      "source": "SYNTHETIC_A01",
+                      "spark": [
+                        62
+                      ],
+                      "baseline": null,
+                      "threshold_status": "provisional",
+                      "thresholds": {
+                        "reference_min": 40,
+                        "reference_max": 120
+                      }
+                    },
+                    {
+                      "id": "co2_cabin",
+                      "value": null,
+                      "unit": "ppm",
+                      "last_updated": null,
+                      "trend": "no_data",
+                      "quality": "synthetic",
+                      "measurement_quality": "no_data",
+                      "data_class": "synthetic",
+                      "status": "no_data",
+                      "data_status": "no_data",
+                      "source": null,
+                      "spark": [],
+                      "baseline": null,
+                      "threshold_status": "provisional",
+                      "thresholds": {
+                        "reference_min": 0.0,
+                        "reference_max": 5000.0
+                      }
+                    }
+                  ],
+                  "active_alerts": [],
+                  "triggered_rules": [],
+                  "hazards": [
+                    {
+                      "id": "radiation",
+                      "level": "no_data",
+                      "indicators": []
+                    },
+                    {
+                      "id": "isolation",
+                      "level": "no_data",
+                      "indicators": []
+                    },
+                    {
+                      "id": "hostile_environment",
+                      "level": "no_data",
+                      "indicators": []
+                    },
+                    {
+                      "id": "distance_from_earth",
+                      "level": "no_data",
+                      "indicators": []
+                    },
+                    {
+                      "id": "altered_gravity",
+                      "level": "no_data",
+                      "indicators": []
+                    }
+                  ],
+                  "routine": {
+                    "available": false,
+                    "progress": null,
+                    "badges": [],
+                    "reminders": []
+                  },
+                  "data_quality": {
+                    "data_class": "synthetic",
+                    "valid": 3,
+                    "suspect": 0,
+                    "no_data": 15
+                  },
+                  "services": {
+                    "engine": "ok",
+                    "ai": "offline",
+                    "knowledge": "ok"
+                  },
+                  "last_updated": "2026-01-01T06:00:00Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filters, unsupported scenario, or conflicting time filters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/observations": {
       "get": {
         "operationId": "listObservations",
@@ -1985,6 +2181,277 @@
           },
           "history_truncated": {
             "type": "boolean"
+          }
+        }
+      },
+      "Dashboard": {
+        "type": "object",
+        "required": [
+          "subject_id",
+          "mission",
+          "global",
+          "indicators",
+          "active_alerts",
+          "triggered_rules",
+          "hazards",
+          "routine",
+          "data_quality",
+          "services",
+          "last_updated"
+        ],
+        "properties": {
+          "subject_id": {
+            "type": "string"
+          },
+          "mission": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "global": {
+            "type": "object",
+            "required": [
+              "level",
+              "confidence",
+              "badges"
+            ],
+            "properties": {
+              "level": {
+                "type": "string",
+                "enum": [
+                  "green",
+                  "amber",
+                  "red",
+                  "no_data"
+                ]
+              },
+              "confidence": {
+                "type": "string"
+              },
+              "badges": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "indicators": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "value",
+                "unit",
+                "last_updated",
+                "trend",
+                "quality",
+                "measurement_quality",
+                "data_class",
+                "status",
+                "data_status",
+                "source",
+                "spark",
+                "baseline",
+                "threshold_status",
+                "thresholds"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "last_updated": {
+                  "type": "string",
+                  "format": "date-time",
+                  "nullable": true
+                },
+                "trend": {
+                  "type": "string"
+                },
+                "quality": {
+                  "type": "string"
+                },
+                "measurement_quality": {
+                  "type": "string"
+                },
+                "data_class": {
+                  "type": "string",
+                  "enum": [
+                    "measured_real",
+                    "analog",
+                    "synthetic"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "data_status": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "spark": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "baseline": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "threshold_status": {
+                  "type": "string",
+                  "enum": [
+                    "provisional"
+                  ]
+                },
+                "thresholds": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "active_alerts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "triggered_rules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hazards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "level",
+                "indicators"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "green",
+                    "amber",
+                    "red",
+                    "no_data"
+                  ]
+                },
+                "indicators": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "routine": {
+            "type": "object",
+            "required": [
+              "available",
+              "progress",
+              "badges",
+              "reminders"
+            ],
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "progress": {
+                "type": "number",
+                "nullable": true
+              },
+              "badges": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reminders": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "data_quality": {
+            "type": "object",
+            "required": [
+              "data_class",
+              "valid",
+              "suspect",
+              "no_data"
+            ],
+            "properties": {
+              "data_class": {
+                "type": "string",
+                "enum": [
+                  "measured_real",
+                  "analog",
+                  "synthetic"
+                ]
+              },
+              "valid": {
+                "type": "integer"
+              },
+              "suspect": {
+                "type": "integer"
+              },
+              "no_data": {
+                "type": "integer"
+              }
+            }
+          },
+          "services": {
+            "type": "object",
+            "required": [
+              "engine",
+              "ai",
+              "knowledge"
+            ],
+            "properties": {
+              "engine": {
+                "type": "string"
+              },
+              "ai": {
+                "type": "string",
+                "enum": [
+                  "online",
+                  "offline"
+                ]
+              },
+              "knowledge": {
+                "type": "string"
+              }
+            }
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

@@ -41,6 +41,7 @@ routes later in this draft. Business routes are versioned under `/api/v1`;
 | GET | `/api/v1/indicators/{indicator_id}` |
 | GET | `/api/v1/state` |
 | GET | `/api/v1/state/{subject_id}` |
+| GET | `/api/v1/dashboard` |
 | GET | `/api/v1/observations` |
 | GET | `/api/v1/observations/export` |
 | POST | `/api/v1/ingest` |
@@ -249,7 +250,7 @@ Export observations as CSV or JSONL.
 
 ---
 
-### `GET /api/v1/sources`
+### `GET /api/v1/sources` — planned, not implemented
 
 List all ingested data sources with their status.
 
@@ -272,7 +273,7 @@ List all ingested data sources with their status.
 
 ---
 
-### `GET /api/v1/manifests`
+### `GET /api/v1/manifests` — planned, not implemented
 
 List data acquisition manifests.
 
@@ -295,7 +296,7 @@ List data acquisition manifests.
 
 ---
 
-### `GET /api/v1/provenance/{observation_id}`
+### `GET /api/v1/provenance/{observation_id}` — planned, not implemented
 
 Trace an observation back to its raw source.
 
@@ -320,6 +321,107 @@ Trace an observation back to its raw source.
 ---
 
 ## 3. Health Intelligence (Partie 2)
+
+### `GET /api/v1/dashboard`
+
+Returns a complete dashboard response for one subject. For the offline A-01
+demo, omit `data_class` and provide `day=1`, `97`, `117`, or `124`; the response
+is generated deterministically and is explicitly labelled synthetic. `subject`
+is accepted as an alias for `subject_id`. Non-demo subjects require an explicit
+`data_class`. `day` and `as_of` are mutually exclusive.
+
+The dashboard returns all registered indicators. At most eight have an
+available measurement; all remaining or missing indicators have
+`status: "no_data"`. `quality: "synthetic"` identifies the demo class, while
+`measurement_quality` describes the observation itself. Hazard levels are
+`no_data` until a sourced hazard mapping is available. The static demo mission
+context is illustrative and does not represent a real mission.
+
+**Query parameters:** `subject` or `subject_id`, `data_class`,
+`scenario=a01|nominal|dropout`, `day=1..124`, or `as_of` (UTC timestamp).
+
+**Response 200:**
+```json
+{
+  "subject_id": "A-01",
+  "mission": {
+    "mission_id": "IRCO-DEMO",
+    "mission_day": 1,
+    "environment": "deep_space",
+    "earth_delay_min": 12,
+    "mode": "autonomous",
+    "simulated": true
+  },
+  "global": {
+    "level": "green",
+    "confidence": "low_synthetic",
+    "badges": ["simulated"]
+  },
+  "indicators": [
+    {
+      "id": "heart_rate",
+      "value": 62,
+      "unit": "bpm",
+      "last_updated": "2026-01-01T06:00:00Z",
+      "trend": "insufficient_data",
+      "quality": "synthetic",
+      "measurement_quality": "valid",
+      "data_class": "synthetic",
+      "status": "fresh",
+      "data_status": "fresh",
+      "source": "SYNTHETIC_A01",
+      "spark": [62],
+      "baseline": null,
+      "threshold_status": "provisional",
+      "thresholds": { "reference_min": 40, "reference_max": 120 }
+    },
+    {
+      "id": "co2_cabin",
+      "value": null,
+      "unit": "ppm",
+      "last_updated": null,
+      "trend": "no_data",
+      "quality": "synthetic",
+      "measurement_quality": "no_data",
+      "data_class": "synthetic",
+      "status": "no_data",
+      "data_status": "no_data",
+      "source": null,
+      "spark": [],
+      "baseline": null,
+      "threshold_status": "provisional",
+      "thresholds": { "reference_min": 0.0, "reference_max": 5000.0 }
+    }
+  ],
+  "active_alerts": [],
+  "triggered_rules": [],
+  "hazards": [
+    { "id": "radiation", "level": "no_data", "indicators": [] },
+    { "id": "isolation", "level": "no_data", "indicators": [] },
+    { "id": "hostile_environment", "level": "no_data", "indicators": [] },
+    { "id": "distance_from_earth", "level": "no_data", "indicators": [] },
+    { "id": "altered_gravity", "level": "no_data", "indicators": [] }
+  ],
+  "routine": {
+    "available": false,
+    "progress": null,
+    "badges": [],
+    "reminders": []
+  },
+  "data_quality": {
+    "data_class": "synthetic",
+    "valid": 3,
+    "suspect": 0,
+    "no_data": 15
+  },
+  "services": { "engine": "ok", "ai": "offline", "knowledge": "ok" },
+  "last_updated": "2026-01-01T06:00:00Z"
+}
+```
+
+`active_alerts` can contain a simulated, non-persisted rule evaluation in demo
+mode. It is not a persisted crew alert. `routine` and hazard mappings are not
+implemented; their fields are present but explicitly unavailable.
 
 ### `GET /api/v1/state`
 
@@ -382,7 +484,7 @@ and optional UTC `as_of` query parameters as the overview endpoint.
 
 ---
 
-### `GET /api/v1/indicator/{indicator_name}`
+### `GET /api/v1/indicator/{indicator_name}` — planned, not implemented
 
 Indicator definition and current values across all subjects.
 
@@ -438,19 +540,19 @@ List alerts with optional filters.
 
 ---
 
-### `GET /api/v1/alerts/{alert_id}`
+### `GET /api/v1/alerts/{alert_id}` — planned, not implemented
 
 Full alert detail including event history.
 
 ---
 
-### `POST /api/v1/alerts/{alert_id}/acknowledge`
+### `POST /api/v1/alerts/{alert_id}/acknowledge` — planned, not implemented
 
 Acknowledge an alert. Transitions state from `created` to `acknowledged`.
 
 ---
 
-### `POST /api/v1/alerts/{alert_id}/action`
+### `POST /api/v1/alerts/{alert_id}/action` — planned, not implemented
 
 Record an action taken on an alert.
 
@@ -464,7 +566,7 @@ Record an action taken on an alert.
 
 ---
 
-### `POST /api/v1/alerts/{alert_id}/close`
+### `POST /api/v1/alerts/{alert_id}/close` — planned, not implemented
 
 Close an alert with a resolution.
 
@@ -478,7 +580,7 @@ Close an alert with a resolution.
 
 ---
 
-### `POST /api/v1/followup/evaluate`
+### `POST /api/v1/followup/evaluate` — planned, not implemented
 
 Trigger a follow-up evaluation for a subject. Re-runs the analysis and decision engine.
 
@@ -505,7 +607,7 @@ Trigger a follow-up evaluation for a subject. Re-runs the analysis and decision 
 
 ---
 
-### `GET /api/v1/report/{subject_id}`
+### `GET /api/v1/report/{subject_id}` — planned, not implemented
 
 Generate a structured health report for a subject.
 
@@ -566,7 +668,7 @@ BM25 search over the scientific knowledge base.
 
 ---
 
-### `GET /api/v1/knowledge/sources`
+### `GET /api/v1/knowledge/sources` — planned, not implemented
 
 Planned; this endpoint is not implemented. Use `GET /api/v1/knowledge/health`
 and `GET /api/v1/knowledge/search` in the current API.
@@ -634,7 +736,7 @@ answer.
 
 ---
 
-### `POST /api/v1/assistant/explain`
+### `POST /api/v1/assistant/explain` — planned, not implemented
 
 Request an explanation of a specific alert or health state.
 
@@ -647,7 +749,7 @@ Request an explanation of a specific alert or health state.
 
 ---
 
-### `POST /api/v1/multimodal/transcription`
+### `POST /api/v1/multimodal/transcription` — planned, not implemented
 
 Transcribe audio to text (requires Colab or external ASR).
 
@@ -672,7 +774,7 @@ Transcribe audio to text (requires Colab or external ASR).
 
 ---
 
-### `POST /api/v1/multimodal/vision`
+### `POST /api/v1/multimodal/vision` — planned, not implemented
 
 Analyze an image with context (requires VLM).
 
@@ -692,7 +794,7 @@ Analyze an image with context (requires VLM).
 
 ---
 
-### `POST /api/v1/multimodal/speech`
+### `POST /api/v1/multimodal/speech` — planned, not implemented
 
 Generate speech from text (TTS).
 
