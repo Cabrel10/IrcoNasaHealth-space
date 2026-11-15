@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 axum = "0.7"
 chrono = "0.4"
+futures-util = "0.3"
 irco-ai = { path = "../irco-ai" }
 irco-alerts = { path = "../irco-alerts" }
 irco-core = { path = "../irco-core" }
@@ -16,7 +17,7 @@ irco-health = { path = "../irco-health" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 tower-http = { version = "0.5", features = ["cors"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

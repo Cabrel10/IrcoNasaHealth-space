@@ -1,5 +1,6 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
     env,
     path::{Path as FsPath, PathBuf},
     sync::{Arc, Mutex, RwLock},
@@ -13,10 +14,12 @@ use axum::{
     },
     http::{header, HeaderMap, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
+    response::sse::{Event, KeepAlive, Sse},
     response::{IntoResponse, Response},
     routing::{get, patch, post},
     Json, Router,
 };
+use futures_util::stream::{self, Stream};
 use irco_ai::{compose_answer, current_colab_runtime};
 use irco_alerts::{
     create_alert, init_db as init_alerts_db, list_alerts, record_followup_measurement,
@@ -37,6 +40,7 @@ use irco_decisions::{
     },
     vigilance::compute_vigilance,
 };
+use irco_health::baseline::compute_personal_baseline;
 use irco_health::temporal::{analyze_history, TrendDirection};
 use irco_knowledge::{KnowledgeBase, SearchFilters, SearchHit};
 use rusqlite::{Connection, OptionalExtension};
@@ -61,10 +65,12 @@ pub struct AppState {
     colab_session: Arc<Mutex<Option<ColabSession>>>,
     colab_registry_url: Option<String>,
     colab_registry_token: Option<String>,
+    observation_updates: tokio::sync::broadcast::Sender<Value>,
 }
 
 impl AppState {
     pub fn new(database: Connection, rules: RulesDocument, api_token: Option<String>) -> Self {
+        let (observation_updates, _) = tokio::sync::broadcast::channel(256);
         Self {
             database: Arc::new(Mutex::new(database)),
             rules: Arc::new(RwLock::new(rules)),
@@ -78,6 +84,7 @@ impl AppState {
             colab_session: Arc::new(Mutex::new(None)),
             colab_registry_url: None,
             colab_registry_token: None,
+            observation_updates,
         }
     }
 
@@ -615,10 +622,17 @@ struct HealthOverviewResponse {
 struct DashboardQuery {
     subject: Option<String>,
     subject_id: Option<String>,
+    mode: Option<String>,
     data_class: Option<String>,
     scenario: Option<String>,
     day: Option<u32>,
     as_of: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DashboardEventsQuery {
+    subject_id: String,
+    data_class: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -647,9 +661,18 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/colab/capabilities", get(colab_capabilities))
         .route("/api/v1/indicators", get(indicators))
         .route("/api/v1/indicators/:indicator_id", get(indicator))
+        .route(
+            "/api/v1/indicators/:indicator_id/history",
+            get(indicator_history),
+        )
         .route("/api/v1/state", get(health_overview))
         .route("/api/v1/state/:subject_id", get(health_state))
         .route("/api/v1/dashboard", get(dashboard))
+        .route("/api/v1/dashboard/events", get(dashboard_events))
+        .route("/api/v1/mission", get(mission))
+        .route("/api/v1/routine", get(routine))
+        .route("/api/v1/routine/done", post(routine_done))
+        .route("/api/v1/checkin", post(checkin))
         .route("/api/v1/observations", get(observations))
         .route("/api/v1/observations/export", get(export))
         .route("/api/v1/ingest", post(ingest))
@@ -1055,6 +1078,592 @@ async fn indicator(
         })
 }
 
+#[derive(Debug, Deserialize)]
+struct HistoryQuery {
+    subject: Option<String>,
+    subject_id: Option<String>,
+    mode: Option<String>,
+    data_class: Option<String>,
+    days: Option<u32>,
+    day: Option<u32>,
+    scenario: Option<String>,
+    as_of: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+async fn indicator_history(
+    State(state): State<AppState>,
+    Path(indicator_id): Path<String>,
+    query: Result<Query<HistoryQuery>, QueryRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Query(query) = query.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_query",
+            &error.body_text(),
+            "Use subject, data_class, days, and optionally day or as_of.",
+        )
+    })?;
+
+    let Some(registry) = state.indicators.as_ref().as_ref() else {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "indicator_registry_unavailable",
+            "The indicator registry is not loaded",
+            "Configure IRCO_INDICATOR_REGISTRY and restart the API.",
+        ));
+    };
+
+    let Some(entry) = registry.indicators.iter().find(|e| e.id == indicator_id) else {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "indicator_not_found",
+            &format!("Indicator '{indicator_id}' not found in registry"),
+            "List registered indicators and retry.",
+        ));
+    };
+
+    let subject_id = query
+        .subject
+        .or(query.subject_id)
+        .or_else(|| {
+            query
+                .scenario
+                .as_deref()
+                .and_then(|scenario| match scenario {
+                    "a01" => Some("A-01".to_owned()),
+                    "nominal" => Some("N-01".to_owned()),
+                    "dropout" => Some("D-01".to_owned()),
+                    _ => None,
+                })
+        })
+        .unwrap_or_else(|| "A-01".to_owned());
+
+    let mode = query.mode.as_deref().unwrap_or_else(|| {
+        if query.scenario.is_some() || query.day.is_some() {
+            "demo"
+        } else {
+            "real"
+        }
+    });
+    if !matches!(mode, "real" | "demo") {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_history_mode",
+            "mode must be real or demo",
+            "Choose mode=real for stored observations or mode=demo for a deterministic simulation.",
+        ));
+    }
+    let data_class_name = query.data_class.as_deref().unwrap_or(match mode {
+        "demo" => "synthetic",
+        _ => "measured_real",
+    });
+
+    let data_class = match data_class_name {
+        "measured_real" => DataClass::MeasuredReal,
+        "analog" => DataClass::Analog,
+        "synthetic" => DataClass::Synthetic,
+        _ => {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "data_class_required",
+                "A valid data_class is required for indicator history",
+                "Choose measured_real, analog, or synthetic.",
+            ));
+        }
+    };
+
+    let days = query.days.unwrap_or(30).clamp(1, 365);
+    if mode == "real" && (query.day.is_some() || query.scenario.is_some()) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_real_time_filter",
+            "scenario and day are only supported in demo mode",
+            "Use mode=demo to select a simulated mission day.",
+        ));
+    }
+    if mode == "demo" && query.as_of.is_some() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_demo_time_filter",
+            "as_of is not supported in demo mode",
+            "Use day to select a simulated mission day.",
+        ));
+    }
+    let end_time = query.as_of.unwrap_or_else(chrono::Utc::now);
+    let start_time = end_time - chrono::Duration::days(i64::from(days));
+
+    let params = QueryParams {
+        indicator: Some(indicator_id.clone()),
+        subject_id: Some(subject_id.clone()),
+        source: None,
+        from: Some(start_time.to_rfc3339()),
+        to: Some(end_time.to_rfc3339()),
+        data_class: Some(data_class.as_str().to_owned()),
+        limit: 10_000,
+        offset: 0,
+        descending: false,
+    };
+
+    let mut observations = {
+        let database = state.database.lock().map_err(|_| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "database_unavailable",
+                "The local database is unavailable",
+                "Check database health and retry.",
+            )
+        })?;
+        query_observations(&database, &params).map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "history_query_failed",
+                &error.to_string(),
+                "Check the observation store and retry.",
+            )
+        })?
+    };
+
+    if observations.is_empty() && mode == "demo" && data_class == DataClass::Synthetic {
+        let name = query
+            .scenario
+            .as_deref()
+            .unwrap_or(match subject_id.as_str() {
+                "N-01" => "nominal",
+                "D-01" => "dropout",
+                _ => "a01",
+            });
+        let scenario = demo::DemoScenario::parse(name).ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_REQUEST,
+                "unknown_demo_scenario",
+                "Unknown demonstration scenario",
+                "Choose a01, nominal, or dropout.",
+            )
+        })?;
+        let end_day = query.day.unwrap_or(days).min(demo::SCENARIO_DAYS);
+        let start_day = end_day.saturating_sub(days - 1).max(1);
+        for d in start_day..=end_day {
+            if let Ok(rep) = demo::replay(scenario, d) {
+                for obs in rep.observations {
+                    if obs.indicator == indicator_id {
+                        observations.push(obs);
+                    }
+                }
+            }
+        }
+    }
+
+    let baseline_calc =
+        compute_personal_baseline(&observations, &subject_id, &indicator_id, &data_class);
+    let trend_calc = analyze_history(&observations, &subject_id, &indicator_id, &data_class);
+
+    let period_from = observations.first().map(|o| o.timestamp);
+    let period_to = observations.last().map(|o| o.timestamp);
+
+    let mut valid_count = 0;
+    let mut suspect_count = 0;
+    for o in &observations {
+        match o.quality.as_ref().map(|q| q.status.as_str()) {
+            Some("valid") => valid_count += 1,
+            Some("suspect") => suspect_count += 1,
+            _ => (),
+        }
+    }
+
+    let measurements: Vec<Value> = observations
+        .iter()
+        .map(|o| {
+            json!({
+                "timestamp": o.timestamp,
+                "value": o.value,
+                "quality": o.quality.as_ref().map_or("unknown", |q| q.status.as_str()),
+                "source": o.source,
+            })
+        })
+        .collect();
+
+    let baseline = baseline_calc.map(|b| {
+        json!({
+            "mean": b.mean,
+            "median": b.median,
+            "standard_deviation": b.standard_deviation,
+            "sample_count": b.sample_count,
+        })
+    });
+
+    let trend = trend_calc.map(|t| {
+        json!({
+            "direction": t.trend,
+            "slope_per_day": t.slope_per_day,
+            "minimum": t.minimum,
+            "maximum": t.maximum,
+            "mean": t.mean,
+        })
+    });
+
+    let thresholds = json!({
+        "reference_min": entry.reference_min,
+        "reference_max": entry.reference_max,
+        "reference_source": entry.reference_source,
+        "status": entry.reference_status.as_deref().unwrap_or("provisional"),
+    });
+
+    let data_quality = json!({
+        "valid": valid_count,
+        "suspect": suspect_count,
+        "total": observations.len(),
+    });
+
+    Ok(Json(json!({
+        "subject_id": subject_id,
+        "indicator": indicator_id,
+        "unit": entry.unit,
+        "data_class": data_class,
+        "period": {
+            "from": period_from,
+            "to": period_to,
+        },
+        "measurements": measurements,
+        "baseline": baseline,
+        "trend": trend,
+        "thresholds": thresholds,
+        "data_quality": data_quality,
+    })))
+}
+
+async fn mission(State(_state): State<AppState>) -> Json<Value> {
+    Json(json!({
+        "mission_id": "IRCO-DEMO",
+        "name": "Integrated Risk and Countermeasure Observatory Demo Mission",
+        "start_date": "2026-01-01T00:00:00Z",
+        "duration_days": 124,
+        "crew_size": 1,
+        "subject_id": "A-01",
+        "environment": "deep_space",
+        "earth_delay_min": 12,
+        "simulated": true,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct RoutineQuery {
+    subject_id: Option<String>,
+    date: Option<String>,
+}
+
+async fn routine(
+    State(state): State<AppState>,
+    query: Result<Query<RoutineQuery>, QueryRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Query(query) = query.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_query",
+            &error.body_text(),
+            "Use subject_id and optional date (YYYY-MM-DD).",
+        )
+    })?;
+    let subject_id = query.subject_id.unwrap_or_else(|| "A-01".to_owned());
+    let date = query
+        .date
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_routine_date",
+            &error.to_string(),
+            "Use date=YYYY-MM-DD.",
+        )
+    })?;
+    let completed_tasks = {
+        let database = state.database.lock().map_err(|_| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "database_unavailable",
+                "The local database is unavailable",
+                "Check database health and retry.",
+            )
+        })?;
+        let mut statement = database
+            .prepare(
+                "SELECT task_id FROM routine_completions \
+                 WHERE subject_id = ?1 AND completion_date = ?2",
+            )
+            .map_err(|error| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "routine_query_failed",
+                    &error.to_string(),
+                    "Check the routine completion store.",
+                )
+            })?;
+        let rows = statement
+            .query_map((&subject_id, &date), |row| row.get::<_, String>(0))
+            .map_err(|error| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "routine_query_failed",
+                    &error.to_string(),
+                    "Check the routine completion store.",
+                )
+            })?;
+        rows.collect::<Result<BTreeSet<_>, _>>().map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "routine_query_failed",
+                &error.to_string(),
+                "Check the routine completion store.",
+            )
+        })?
+    };
+
+    let mut tasks = vec![
+        json!({
+            "id": "morning-vitals",
+            "name": "Morning Vitals Check",
+            "category": "health",
+            "due_time": "08:00",
+            "completed": false,
+            "priority": "high"
+        }),
+        json!({
+            "id": "exercise-cardio",
+            "name": "Cardiovascular Exercise",
+            "category": "exercise",
+            "duration_min": 30,
+            "due_time": "10:00",
+            "completed": false,
+            "priority": "high"
+        }),
+        json!({
+            "id": "meal-log",
+            "name": "Meal Log",
+            "category": "nutrition",
+            "due_time": "12:00",
+            "completed": false,
+            "priority": "medium"
+        }),
+        json!({
+            "id": "mood-checkin",
+            "name": "Mood Check-in",
+            "category": "behavioral",
+            "due_time": "18:00",
+            "completed": false,
+            "priority": "medium"
+        }),
+    ];
+    for task in &mut tasks {
+        if let Some(task_id) = task["id"].as_str() {
+            task["completed"] = json!(completed_tasks.contains(task_id));
+        }
+    }
+    let completed = completed_tasks.len().min(tasks.len());
+    let total = tasks.len();
+    Ok(Json(json!({
+        "subject_id": subject_id,
+        "date": date,
+        "tasks": tasks,
+        "progress": {
+            "completed": completed,
+            "total": total,
+            "percentage": completed * 100 / total
+        }
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+struct RoutineDoneRequest {
+    subject_id: String,
+    task_id: String,
+    completed_at: Option<String>,
+}
+
+async fn routine_done(
+    State(state): State<AppState>,
+    request: Result<Json<RoutineDoneRequest>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(payload) = request.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+            &error.body_text(),
+            "Send subject_id, task_id, and optional completed_at.",
+        )
+    })?;
+    if !matches!(
+        payload.task_id.as_str(),
+        "morning-vitals" | "exercise-cardio" | "meal-log" | "mood-checkin"
+    ) {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "routine_task_not_found",
+            "The requested routine task is not configured",
+            "Fetch /api/v1/routine and use one of its task IDs.",
+        ));
+    }
+    let completed_at = match payload.completed_at {
+        Some(value) => chrono::DateTime::parse_from_rfc3339(&value)
+            .map(|timestamp| timestamp.to_utc())
+            .map_err(|error| {
+                api_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_completed_at",
+                    &error.to_string(),
+                    "Provide completed_at as an RFC 3339 timestamp.",
+                )
+            })?,
+        None => chrono::Utc::now(),
+    };
+    let completion_date = completed_at.format("%Y-%m-%d").to_string();
+    let database = state.database.lock().map_err(|_| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "database_unavailable",
+            "The local database is unavailable",
+            "Check database health and retry.",
+        )
+    })?;
+    database
+        .execute(
+            "INSERT INTO routine_completions \
+             (subject_id, task_id, completion_date, completed_at) \
+             VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(subject_id, task_id, completion_date) \
+             DO UPDATE SET completed_at = excluded.completed_at",
+            (
+                &payload.subject_id,
+                &payload.task_id,
+                &completion_date,
+                completed_at.to_rfc3339(),
+            ),
+        )
+        .map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "routine_persistence_failed",
+                &error.to_string(),
+                "Check the routine completion store and retry.",
+            )
+        })?;
+    Ok(Json(json!({
+        "subject_id": payload.subject_id,
+        "task_id": payload.task_id,
+        "completed_at": completed_at,
+        "date": completion_date,
+        "status": "completed"
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+struct CheckinRequest {
+    subject_id: String,
+    indicator: String,
+    value: f64,
+    unit: String,
+    timestamp: Option<String>,
+}
+
+async fn checkin(
+    State(state): State<AppState>,
+    request: Result<Json<CheckinRequest>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(payload) = request.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+            &error.body_text(),
+            "Send subject_id, indicator, value, unit, and an optional RFC 3339 timestamp.",
+        )
+    })?;
+    let Some(registry) = state.indicators.as_ref().as_ref() else {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "indicator_registry_unavailable",
+            "The indicator registry is not loaded",
+            "Configure IRCO_INDICATOR_REGISTRY and restart the API.",
+        ));
+    };
+
+    let indicator_entry = registry
+        .indicators
+        .iter()
+        .find(|e| e.id == payload.indicator);
+    if let Some(entry) = indicator_entry {
+        if entry.unit != payload.unit {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "unit_mismatch",
+                &format!(
+                    "Indicator '{}' expects unit '{}', received '{}'",
+                    payload.indicator, entry.unit, payload.unit
+                ),
+                "Use the correct unit from the indicator registry.",
+            ));
+        }
+    } else {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "indicator_not_found",
+            &format!("Indicator '{}' not found in registry", payload.indicator),
+            "List registered indicators and retry.",
+        ));
+    }
+
+    let timestamp = match payload.timestamp {
+        Some(value) => chrono::DateTime::parse_from_rfc3339(&value)
+            .map(|timestamp| timestamp.to_utc())
+            .map_err(|error| {
+                api_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_timestamp",
+                    &error.to_string(),
+                    "Provide timestamp as an RFC 3339 timestamp.",
+                )
+            })?,
+        None => chrono::Utc::now(),
+    };
+    let observation = Observation {
+        id: format!("checkin-{}", Uuid::new_v4().simple()),
+        timestamp,
+        subject_id: Some(payload.subject_id.clone()),
+        indicator: payload.indicator.clone(),
+        value: payload.value,
+        unit: payload.unit.clone(),
+        source: "CREW_MANUAL".to_owned(),
+        data_class: DataClass::MeasuredReal,
+        context: Default::default(),
+        provenance: Default::default(),
+        quality: Some(irco_core::ObservationQuality {
+            status: "valid".to_owned(),
+            flags: Vec::new(),
+            original_resolution: Some("manual".to_owned()),
+            additional: Default::default(),
+        }),
+        metadata: Default::default(),
+    };
+    let (_, Json(ingest_response)) = ingest(
+        State(state),
+        Ok(Json(IngestRequest {
+            observations: vec![observation.clone()],
+        })),
+    )
+    .await?;
+    Ok(Json(json!({
+        "measurement_id": observation.id,
+        "subject_id": payload.subject_id,
+        "indicator": payload.indicator,
+        "value": payload.value,
+        "unit": payload.unit,
+        "timestamp": observation.timestamp,
+        "data_class": observation.data_class,
+        "quality": observation.quality,
+        "status": "accepted",
+        "persisted": ingest_response.accepted == 1 || ingest_response.duplicates_skipped == 1,
+        "alerts_created": ingest_response.alerts_created,
+        "notice": "Decision support only; this observation does not establish a diagnosis.",
+    })))
+}
+
 async fn observations(
     State(state): State<AppState>,
     query: Result<Query<ObservationQuery>, QueryRejection>,
@@ -1163,6 +1772,7 @@ async fn health_state(
         &QueryParams {
             subject_id: Some(subject_id.clone()),
             data_class: Some(data_class.as_str().to_owned()),
+            to: Some(as_of.to_rfc3339()),
             limit: 10_000,
             descending: true,
             ..QueryParams::default()
@@ -1526,12 +2136,18 @@ async fn dashboard(
                 })
         })
         .unwrap_or_else(|| "A-01".to_owned());
-    let default_demo = matches!(subject_id.as_str(), "A-01" | "N-01" | "D-01");
-    let data_class_name =
-        query
-            .data_class
-            .as_deref()
-            .unwrap_or(if default_demo { "synthetic" } else { "" });
+    let mode = query.mode.as_deref().unwrap_or_else(|| {
+        if query.scenario.is_some() || query.day.is_some() {
+            "demo"
+        } else {
+            "real"
+        }
+    });
+    let data_class_name = query.data_class.as_deref().unwrap_or(match mode {
+        "demo" => "synthetic",
+        "real" => "measured_real",
+        _ => "",
+    });
     let data_class = match data_class_name {
         "measured_real" => DataClass::MeasuredReal,
         "analog" => DataClass::Analog,
@@ -1546,10 +2162,15 @@ async fn dashboard(
         }
     };
 
-    let demo_scenario = if query.scenario.is_some()
-        || query.day.is_some()
-        || (default_demo && query.as_of.is_none() && data_class == DataClass::Synthetic)
-    {
+    let demo_scenario = if mode == "demo" {
+        if query.as_of.is_some() {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_demo_time_filter",
+                "as_of is not supported in demo mode",
+                "Use day to select a simulated mission day.",
+            ));
+        }
         let name = query
             .scenario
             .as_deref()
@@ -1575,8 +2196,23 @@ async fn dashboard(
                 "Choose a01, nominal, or dropout.",
             )
         })?)
-    } else {
+    } else if mode == "real" {
+        if query.scenario.is_some() || query.day.is_some() {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_real_time_filter",
+                "scenario and day are only supported in demo mode",
+                "Use mode=demo for a simulated mission day.",
+            ));
+        }
         None
+    } else {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_dashboard_mode",
+            "mode must be real or demo",
+            "Choose mode=real for stored observations or mode=demo for a deterministic simulation.",
+        ));
     };
 
     let (as_of, vigilance, triggered_rules, mut measurements, persisted_alerts, mission) =
@@ -1612,19 +2248,68 @@ async fn dashboard(
                     "Use A-01 for a01, N-01 for nominal, or D-01 for dropout.",
                 ));
             }
+            let first_day = day.saturating_sub(13).max(1);
+            let mut history_by_indicator: BTreeMap<String, Vec<Observation>> = BTreeMap::new();
+            for history_day in first_day..=day {
+                let history_replay = demo::replay(scenario, history_day).map_err(|error| {
+                    api_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_demo_day",
+                        &error,
+                        "Choose a mission day from 1 through 124.",
+                    )
+                })?;
+                for observation in history_replay.observations {
+                    history_by_indicator
+                        .entry(observation.indicator.clone())
+                        .or_default()
+                        .push(observation);
+                }
+            }
             let mut measurements = BTreeMap::new();
-            for observation in &replay.replay.observations {
-                measurements.insert(
-                    observation.indicator.clone(),
+            for (indicator, history) in history_by_indicator {
+                let Some(latest) = history.last() else {
+                    continue;
+                };
+                let values: Vec<_> = history.iter().map(|item| item.value).collect();
+                let baseline = compute_personal_baseline(
+                    &history,
+                    &subject_id,
+                    &indicator,
+                    &DataClass::Synthetic,
+                )
+                .map(|baseline| {
                     json!({
-                        "value": observation.value,
-                        "unit": observation.unit,
-                        "last_updated": observation.timestamp,
-                        "trend": "insufficient_data",
-                        "quality": observation.quality.as_ref().map_or("unknown", |quality| quality.status.as_str()),
-                        "source": observation.source,
+                        "mean": baseline.mean,
+                        "median": baseline.median,
+                        "standard_deviation": baseline.standard_deviation,
+                        "sample_count": baseline.sample_count,
+                    })
+                });
+                let trend =
+                    analyze_history(&history, &subject_id, &indicator, &DataClass::Synthetic)
+                        .map(|analysis| analysis.trend);
+                let points: Vec<_> = history
+                    .iter()
+                    .map(|item| json!({
+                        "timestamp": item.timestamp,
+                        "value": item.value,
+                        "quality": item.quality.as_ref().map_or("unknown", |quality| quality.status.as_str()),
+                    }))
+                    .collect();
+                measurements.insert(
+                    indicator,
+                    json!({
+                        "value": latest.value,
+                        "unit": latest.unit,
+                        "last_updated": latest.timestamp,
+                        "trend": trend.unwrap_or(TrendDirection::InsufficientData),
+                        "quality": latest.quality.as_ref().map_or("unknown", |quality| quality.status.as_str()),
+                        "source": latest.source,
                         "data_status": "fresh",
-                        "spark": [observation.value],
+                        "spark": values,
+                        "history": points,
+                        "baseline": baseline,
                     }),
                 );
             }
@@ -1674,25 +2359,72 @@ async fn dashboard(
             )
             .await?
             .0;
-            let measurements = subject_state
-                .indicators
-                .iter()
-                .map(|(id, value)| {
-                    (
-                        id.clone(),
-                        json!({
-                            "value": value.latest,
-                            "unit": value.unit,
-                            "last_updated": value.last_updated,
-                            "trend": value.trend,
-                            "quality": value.quality,
-                            "source": value.source,
-                            "data_status": value.data_status,
-                            "spark": [value.latest],
-                        }),
+            let mut measurements = BTreeMap::new();
+            for (id, value) in &subject_state.indicators {
+                let history = {
+                    let database = state.database.lock().map_err(|_| {
+                        api_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "database_unavailable",
+                            "The local database is unavailable",
+                            "Check database health and retry.",
+                        )
+                    })?;
+                    query_observations(
+                        &database,
+                        &QueryParams {
+                            indicator: Some(id.clone()),
+                            subject_id: Some(subject_id.clone()),
+                            data_class: Some(data_class.as_str().to_owned()),
+                            to: query.as_of.map(|timestamp| timestamp.to_rfc3339()),
+                            limit: 14,
+                            descending: true,
+                            ..QueryParams::default()
+                        },
                     )
-                })
-                .collect();
+                    .map_err(|error| {
+                        api_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "history_query_failed",
+                            &error.to_string(),
+                            "Check the observation store and retry.",
+                        )
+                    })?
+                };
+                let history: Vec<_> = history.into_iter().rev().collect();
+                let baseline = compute_personal_baseline(&history, &subject_id, id, &data_class)
+                    .map(|baseline| {
+                        json!({
+                            "mean": baseline.mean,
+                            "median": baseline.median,
+                            "standard_deviation": baseline.standard_deviation,
+                            "sample_count": baseline.sample_count,
+                        })
+                    });
+                let points: Vec<_> = history
+                    .iter()
+                    .map(|item| json!({
+                        "timestamp": item.timestamp,
+                        "value": item.value,
+                        "quality": item.quality.as_ref().map_or("unknown", |quality| quality.status.as_str()),
+                    }))
+                    .collect();
+                measurements.insert(
+                    id.clone(),
+                    json!({
+                        "value": value.latest,
+                        "unit": value.unit,
+                        "last_updated": value.last_updated,
+                        "trend": value.trend,
+                        "quality": value.quality,
+                        "source": value.source,
+                        "data_status": value.data_status,
+                        "spark": history.iter().map(|item| item.value).collect::<Vec<_>>(),
+                        "history": points,
+                        "baseline": baseline,
+                    }),
+                );
+            }
             let active_alerts: Vec<_> = subject_state
                 .alerts
                 .iter()
@@ -1729,20 +2461,46 @@ async fn dashboard(
             )
         };
 
-    let mut indicators = dashboard_indicators(
+    let indicators = dashboard_indicators(
         state.indicators.as_ref().as_ref(),
         &mut measurements,
         &data_class,
+        as_of,
     );
-    indicators.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    let routine = routine(
+        State(state.clone()),
+        Ok(Query(RoutineQuery {
+            subject_id: Some(subject_id.clone()),
+            date: Some(as_of.format("%Y-%m-%d").to_string()),
+        })),
+    )
+    .await?
+    .0;
     let services_engine = state.database.lock().is_ok() && state.rules.read().is_ok();
     let ai_online = state.colab_status().await.available;
     let knowledge_online = state.knowledge.is_some();
-    let vigilance_name = match vigilance {
-        VigilanceLevel::Green => "green",
-        VigilanceLevel::Amber => "amber",
-        VigilanceLevel::Red => "red",
-        VigilanceLevel::NoData => "no_data",
+    let rule_document = state.rules_snapshot().map_err(|error| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "rules_unavailable",
+            &error.to_string(),
+            "Check the loaded rule configuration.",
+        )
+    })?;
+    let validated_rules_available = rule_document.rules.iter().any(|rule| {
+        rule.enabled
+            && (rule.data_class_filter.is_empty() || rule.data_class_filter.contains(&data_class))
+            && rule.status == RuleStatus::Validated
+    });
+    let vigilance_name = if data_class != DataClass::Synthetic && !validated_rules_available {
+        "no_data"
+    } else {
+        match vigilance {
+            VigilanceLevel::Green => "green",
+            VigilanceLevel::Amber => "amber",
+            VigilanceLevel::Red => "red",
+            VigilanceLevel::NoData => "no_data",
+        }
     };
     let valid_count = indicators
         .iter()
@@ -1757,16 +2515,28 @@ async fn dashboard(
         .filter(|indicator| indicator["status"] == "no_data")
         .count();
     Ok(Json(json!({
+        "mode": mode,
         "subject_id": subject_id,
+        "data_class": data_class,
         "mission": mission,
         "global": {
             "level": vigilance_name,
-            "confidence": if data_class == DataClass::Synthetic { "low_synthetic" } else { "not_assessed" },
+            "confidence": if data_class == DataClass::Synthetic { "low_synthetic" } else if validated_rules_available { "rule_supported" } else { "not_assessed" },
             "badges": if data_class == DataClass::Synthetic { vec!["simulated"] } else { Vec::<&str>::new() },
         },
         "indicators": indicators,
         "active_alerts": persisted_alerts,
         "triggered_rules": triggered_rules,
+        "anomalies": {
+            "available": false,
+            "items": [],
+            "reason": "No validated anomaly detector is configured.",
+        },
+        "clinical_assessment": {
+            "available": false,
+            "diagnoses": [],
+            "reason": "IRCO does not diagnose diseases.",
+        },
         "hazards": [
             {"id": "radiation", "level": "no_data", "indicators": []},
             {"id": "isolation", "level": "no_data", "indicators": []},
@@ -1774,12 +2544,7 @@ async fn dashboard(
             {"id": "distance_from_earth", "level": "no_data", "indicators": []},
             {"id": "altered_gravity", "level": "no_data", "indicators": []},
         ],
-        "routine": {
-            "available": false,
-            "progress": null,
-            "badges": [],
-            "reminders": [],
-        },
+        "routine": routine,
         "data_quality": {
             "data_class": data_class,
             "valid": valid_count,
@@ -1792,15 +2557,76 @@ async fn dashboard(
             "knowledge": if knowledge_online { "ok" } else { "unavailable" },
         },
         "last_updated": as_of,
+        "medical_notice": "This service provides traceable decision support, not a medical diagnosis or disease determination.",
     })))
 }
+
+async fn dashboard_events(
+    State(state): State<AppState>,
+    query: Result<Query<DashboardEventsQuery>, QueryRejection>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    let Query(query) = query.map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_query",
+            &error.body_text(),
+            "Provide subject_id and data_class=measured_real, analog, or synthetic.",
+        )
+    })?;
+    if !matches!(
+        query.data_class.as_str(),
+        "measured_real" | "analog" | "synthetic"
+    ) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_data_class",
+            "A valid data_class is required for dashboard events",
+            "Choose measured_real, analog, or synthetic.",
+        ));
+    }
+
+    let receiver = state.observation_updates.subscribe();
+    let subject_id = query.subject_id;
+    let data_class = query.data_class;
+    let stream = stream::unfold(receiver, move |mut receiver| {
+        let subject_id = subject_id.clone();
+        let data_class = data_class.clone();
+        async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(update)
+                        if update["subject_id"] == subject_id
+                            && update["data_class"] == data_class =>
+                    {
+                        let event = Event::default()
+                            .event("observations_updated")
+                            .data(update.to_string());
+                        return Some((Ok(event), receiver));
+                    }
+                    Ok(_) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let event = Event::default()
+                            .event("resync_required")
+                            .data("Refresh the dashboard to retrieve the latest state.");
+                        return Some((Ok(event), receiver));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        }
+    });
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+type RegistryEntry = (String, String, Option<f64>, Option<f64>, String, String);
 
 fn dashboard_indicators(
     registry: Option<&IndicatorRegistry>,
     measurements: &mut BTreeMap<String, Value>,
     data_class: &DataClass,
+    as_of: chrono::DateTime<chrono::Utc>,
 ) -> Vec<Value> {
-    let entries: Vec<(String, String, Option<f64>, Option<f64>)> = registry
+    let entries: Vec<RegistryEntry> = registry
         .map(|registry| {
             registry
                 .indicators
@@ -1811,6 +2637,11 @@ fn dashboard_indicators(
                         indicator.unit.clone(),
                         indicator.reference_min,
                         indicator.reference_max,
+                        indicator.expected_frequency.clone(),
+                        indicator
+                            .reference_status
+                            .clone()
+                            .unwrap_or_else(|| "provisional".to_owned()),
                     )
                 })
                 .collect()
@@ -1824,20 +2655,18 @@ fn dashboard_indicators(
                         measurement["unit"].as_str().unwrap_or("").to_owned(),
                         None,
                         None,
+                        "unknown".to_owned(),
+                        "provisional".to_owned(),
                     )
                 })
                 .collect()
         });
-    let mut active_count = 0;
     entries
         .into_iter()
-        .map(|(id, unit, reference_min, reference_max)| {
+        .map(|(id, unit, reference_min, reference_max, expected_frequency, threshold_status)| {
             let measurement = measurements.remove(&id);
-            let has_measurement = measurement.is_some() && active_count < 8;
-            if has_measurement {
-                active_count += 1;
-            }
-            let mut indicator = measurement.filter(|_| has_measurement).unwrap_or_else(|| {
+            let has_measurement = measurement.is_some();
+            let mut indicator = measurement.unwrap_or_else(|| {
                 json!({
                     "value": null,
                     "unit": unit,
@@ -1847,6 +2676,8 @@ fn dashboard_indicators(
                     "source": null,
                     "data_status": "no_data",
                     "spark": [],
+                    "history": [],
+                    "baseline": null,
                 })
             });
             let measurement_quality = if has_measurement {
@@ -1858,11 +2689,21 @@ fn dashboard_indicators(
                 "no_data".to_owned()
             };
             indicator["id"] = json!(id);
-            indicator["status"] = json!(if has_measurement {
-                indicator["data_status"].as_str().unwrap_or("unknown")
+            let last_updated = indicator["last_updated"]
+                .as_str()
+                .and_then(|timestamp| timestamp.parse::<chrono::DateTime<chrono::Utc>>().ok());
+            let freshness = if !has_measurement || measurement_quality != "valid" {
+                if has_measurement { "invalid" } else { "no_data" }
+            } else if last_updated.is_some_and(|timestamp| {
+                as_of.signed_duration_since(timestamp).num_seconds()
+                    > freshness_limit_seconds(&expected_frequency)
+            }) {
+                "stale"
             } else {
-                "no_data"
-            });
+                "fresh"
+            };
+            indicator["status"] = json!(freshness);
+            indicator["data_status"] = json!(freshness);
             indicator["data_class"] = json!(data_class);
             indicator["quality"] = json!(if data_class == &DataClass::Synthetic {
                 "synthetic"
@@ -1870,15 +2711,29 @@ fn dashboard_indicators(
                 indicator["quality"].as_str().unwrap_or("unknown")
             });
             indicator["measurement_quality"] = json!(measurement_quality);
-            indicator["threshold_status"] = json!("provisional");
+            indicator["threshold_status"] = json!(threshold_status);
+            indicator["expected_frequency"] = json!(expected_frequency);
+            indicator["age_seconds"] = json!(last_updated.map(|timestamp| {
+                as_of
+                    .signed_duration_since(timestamp)
+                    .num_seconds()
+                    .max(0)
+            }));
             indicator["thresholds"] = json!({
                 "reference_min": reference_min,
                 "reference_max": reference_max,
             });
-            indicator["baseline"] = Value::Null;
             indicator
         })
         .collect()
+}
+
+fn freshness_limit_seconds(expected_frequency: &str) -> i64 {
+    if expected_frequency.contains("min") || expected_frequency == "continuous" {
+        5 * 60
+    } else {
+        36 * 60 * 60
+    }
 }
 
 async fn export(
@@ -2277,6 +3132,34 @@ async fn ingest(
             )
         })? {
             alerts_created += 1;
+        }
+    }
+    if summary.accepted > 0 {
+        let mut updates: BTreeMap<
+            (String, String),
+            (chrono::DateTime<chrono::Utc>, BTreeSet<String>),
+        > = BTreeMap::new();
+        for observation in &request.observations {
+            let Some(subject_id) = observation.subject_id.as_deref() else {
+                continue;
+            };
+            let key = (
+                subject_id.to_owned(),
+                observation.data_class.as_str().to_owned(),
+            );
+            let entry = updates
+                .entry(key)
+                .or_insert_with(|| (observation.timestamp, BTreeSet::new()));
+            entry.0 = entry.0.max(observation.timestamp);
+            entry.1.insert(observation.indicator.clone());
+        }
+        for ((subject_id, data_class), (observed_at, indicators)) in updates {
+            let _ = state.observation_updates.send(json!({
+                "subject_id": subject_id,
+                "data_class": data_class,
+                "observed_at": observed_at,
+                "indicators": indicators,
+            }));
         }
     }
     Ok((
@@ -2803,6 +3686,7 @@ mod tests {
         http::{header, Request, StatusCode},
     };
     use chrono::Utc;
+    use futures_util::StreamExt;
     use irco_core::{
         Alert, AlertState, DataClass, DecisionRule, RuleCondition, RuleStatus, RulesDocument,
         VigilanceLevel,
@@ -2822,6 +3706,29 @@ mod tests {
             rules: Vec::new(),
         };
         router(AppState::new(database, rules, token))
+    }
+
+    fn test_app_with_registry() -> (axum::Router, tokio::sync::broadcast::Sender<Value>) {
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let registry_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../config/indicators/registry.toml"
+        );
+        let registry: IndicatorRegistry =
+            toml::from_str(&std::fs::read_to_string(registry_path).unwrap()).unwrap();
+        let mut state = AppState::new(
+            database,
+            RulesDocument {
+                version: "test".to_owned(),
+                rules: Vec::new(),
+            },
+            None,
+        );
+        state.indicators = std::sync::Arc::new(Some(registry));
+        let updates = state.observation_updates.clone();
+        (router(state), updates)
     }
 
     fn test_colab_app(ttl: Duration) -> axum::Router {
@@ -3907,6 +4814,218 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mission_checkin_and_routine_are_persisted_and_observable() {
+        let (app, _) = test_app_with_registry();
+
+        let mission_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/mission")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(mission_resp.status(), axum::http::StatusCode::OK);
+        let mission_body = axum::body::to_bytes(mission_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let mission: Value = serde_json::from_slice(&mission_body).unwrap();
+        assert_eq!(mission["mission_id"], "IRCO-DEMO");
+        assert_eq!(mission["duration_days"], 124);
+        assert_eq!(mission["crew_size"], 1);
+
+        let routine_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/routine?subject_id=A-01&date=2026-11-15")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(routine_resp.status(), axum::http::StatusCode::OK);
+        let routine_body = axum::body::to_bytes(routine_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let routine: Value = serde_json::from_slice(&routine_body).unwrap();
+        assert_eq!(routine["subject_id"], "A-01");
+        assert_eq!(routine["tasks"].as_array().unwrap().len(), 4);
+
+        let completion_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/routine/done")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "subject_id": "A-01",
+                            "task_id": "morning-vitals",
+                            "completed_at": "2026-11-15T08:05:00Z"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(completion_resp.status(), StatusCode::OK);
+
+        let routine_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/routine?subject_id=A-01&date=2026-11-15")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let routine_body = axum::body::to_bytes(routine_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let routine: Value = serde_json::from_slice(&routine_body).unwrap();
+        assert_eq!(routine["progress"]["completed"], 1);
+        assert_eq!(routine["progress"]["percentage"], 25);
+        assert_eq!(routine["tasks"][0]["completed"], true);
+
+        let events_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/dashboard/events?subject_id=A-01&data_class=measured_real")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(events_resp.status(), StatusCode::OK);
+        let mut events = events_resp.into_body().into_data_stream();
+
+        let timestamp = Utc::now().to_rfc3339();
+        let checkin_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/checkin")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "subject_id": "A-01",
+                            "indicator": "heart_rate",
+                            "value": 72.0,
+                            "unit": "bpm",
+                            "timestamp": timestamp
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(checkin_resp.status(), StatusCode::OK);
+        let checkin_body = axum::body::to_bytes(checkin_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let checkin: Value = serde_json::from_slice(&checkin_body).unwrap();
+        assert_eq!(checkin["persisted"], true);
+        assert_eq!(checkin["data_class"], "measured_real");
+        let event = events.next().await.unwrap().unwrap();
+        let event = String::from_utf8(event.to_vec()).unwrap();
+        assert!(event.contains("event: observations_updated"));
+        assert!(event.contains("\"heart_rate\""));
+
+        let observations_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/observations?subject_id=A-01&indicator=heart_rate&data_class=measured_real")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let observations_body = axum::body::to_bytes(observations_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let observations: Value = serde_json::from_slice(&observations_body).unwrap();
+        assert_eq!(observations["total_returned"], 1);
+        assert_eq!(observations["observations"][0]["value"], 72.0);
+        assert_eq!(
+            observations["observations"][0]["data_class"],
+            "measured_real"
+        );
+
+        let dashboard_resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/dashboard?subject=A-01")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let dashboard_body = axum::body::to_bytes(dashboard_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let dashboard: Value = serde_json::from_slice(&dashboard_body).unwrap();
+        assert_eq!(dashboard["mode"], "real");
+        assert_eq!(dashboard["data_class"], "measured_real");
+        let heart_rate = dashboard["indicators"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|indicator| indicator["id"] == "heart_rate")
+            .unwrap();
+        assert_eq!(heart_rate["value"], 72.0);
+        assert_eq!(heart_rate["quality"], "valid");
+        assert_eq!(heart_rate["spark"], serde_json::json!([72.0]));
+    }
+
+    #[tokio::test]
+    async fn empty_real_dashboard_is_unassessed_not_green_or_simulated() {
+        let (app, _) = test_app_with_registry();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/dashboard?subject=A-01")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let dashboard: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(dashboard["mode"], "real");
+        assert_eq!(dashboard["data_class"], "measured_real");
+        assert_eq!(dashboard["global"]["level"], "no_data");
+        assert_eq!(dashboard["global"]["confidence"], "not_assessed");
+        assert_eq!(dashboard["data_quality"]["valid"], 0);
+        assert!(dashboard["indicators"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|indicator| indicator["status"] == "no_data"));
+        assert_eq!(
+            dashboard["clinical_assessment"]["diagnoses"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[tokio::test]
     async fn demo_replay_is_deterministic_and_labels_synthetic_data() {
         let database = Connection::open_in_memory().unwrap();
         irco_data::store::init_db(&database).unwrap();
@@ -4009,7 +5128,7 @@ mod tests {
                 .unwrap();
             assert_eq!(heart_rate["quality"], "synthetic");
             assert_eq!(heart_rate["measurement_quality"], "valid");
-            assert_eq!(heart_rate["threshold_status"], "provisional");
+            assert_eq!(heart_rate["threshold_status"], "illustrative");
             let co2 = dashboard["indicators"]
                 .as_array()
                 .unwrap()
@@ -4022,9 +5141,58 @@ mod tests {
                 .unwrap()
                 .iter()
                 .all(|hazard| hazard["level"] == "no_data"));
-            assert_eq!(dashboard["routine"]["available"], false);
+            assert_eq!(dashboard["routine"]["progress"]["completed"], 0);
+            assert_eq!(dashboard["routine"]["tasks"].as_array().unwrap().len(), 4);
+            assert_eq!(dashboard["clinical_assessment"]["available"], false);
             assert_eq!(dashboard["services"]["engine"], "ok");
         }
+    }
+
+    #[tokio::test]
+    async fn indicator_history_returns_baseline_and_thresholds() {
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let rules_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../rules/rules.json");
+        let registry_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../config/indicators/registry.toml"
+        );
+        let registry: IndicatorRegistry =
+            toml::from_str(&std::fs::read_to_string(registry_path).unwrap()).unwrap();
+        let mut state = AppState::new(
+            database,
+            irco_decisions::rules::load_rules(rules_path).unwrap(),
+            None,
+        );
+        state.indicators = std::sync::Arc::new(Some(registry));
+        let app = router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/indicators/heart_rate/history?subject=A-01&days=30&day=30")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let history: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(history["subject_id"], "A-01");
+        assert_eq!(history["indicator"], "heart_rate");
+        assert_eq!(history["unit"], "bpm");
+        assert_eq!(history["data_class"], "synthetic");
+        assert_eq!(history["measurements"].as_array().unwrap().len(), 30);
+        assert!(history["baseline"].is_object());
+        assert_eq!(history["baseline"]["sample_count"], 30);
+        assert!(history["thresholds"]["reference_min"].as_f64().unwrap() <= 50.0);
+        assert!(history["thresholds"]["reference_max"].as_f64().unwrap() >= 100.0);
+        assert_eq!(history["data_quality"]["valid"], 30);
     }
 
     #[tokio::test]

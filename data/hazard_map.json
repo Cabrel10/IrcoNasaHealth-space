@@ -1,0 +1,56 @@
+{
+  "version": "1.0.0",
+  "source": "data/corpus.jsonl",
+  "hazards": [
+    {
+      "id": "radiation",
+      "coverage": "partial",
+      "corpus_entries": [
+        "csa-space-radiation-effects",
+        "csa-radi-n2-monitoring",
+        "csa-evarm-dosimetry"
+      ],
+      "indicators": ["radiation_dose_daily"],
+      "body_systems": ["hematologic", "ocular"],
+      "note": "Environmental exposure is not a direct measurement of astronaut health."
+    },
+    {
+      "id": "isolation",
+      "coverage": "partial",
+      "corpus_entries": ["nasa-hrp-sleep-schedules"],
+      "indicators": ["sleep_duration", "fatigue_score"],
+      "body_systems": ["behavioral"]
+    },
+    {
+      "id": "altered_gravity",
+      "coverage": "partial",
+      "corpus_entries": [
+        "nasa-hrp-cardiovascular-risk",
+        "nasa-hrp-ongoing-cipher",
+        "csa-iss-experiments-cardiovascular"
+      ],
+      "indicators": ["heart_rate", "sleep_duration"],
+      "body_systems": ["cardiovascular", "behavioral"]
+    },
+    {
+      "id": "hostile_environment",
+      "coverage": "missing",
+      "corpus_entries": [],
+      "indicators": [],
+      "body_systems": [],
+      "note": "No hazard-specific verified excerpt is currently curated."
+    },
+    {
+      "id": "distance_from_earth",
+      "coverage": "missing",
+      "corpus_entries": [],
+      "indicators": [],
+      "body_systems": [],
+      "note": "Communication delay is mission context, not a biomarker."
+    }
+  ],
+  "limits": [
+    "This mapping is evidence navigation, not a diagnosis or clinical risk score.",
+    "No hazard level or alert is inferred by this file."
+  ]
+}

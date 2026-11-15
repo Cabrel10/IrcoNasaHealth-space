@@ -24,6 +24,13 @@ pub fn init_db(conn: &Connection) -> Result<(), irco_core::IrcoError> {
         CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observations(timestamp);
         CREATE INDEX IF NOT EXISTS idx_obs_subject ON observations(subject_id);
         CREATE INDEX IF NOT EXISTS idx_obs_class ON observations(data_class);
+        CREATE TABLE IF NOT EXISTS routine_completions (
+            subject_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            completion_date TEXT NOT NULL,
+            completed_at TEXT NOT NULL,
+            PRIMARY KEY (subject_id, task_id, completion_date)
+        );
         ",
     )
     .map_err(|e| irco_core::IrcoError::Database(e.to_string()))?;
