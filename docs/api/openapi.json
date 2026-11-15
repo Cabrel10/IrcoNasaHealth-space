@@ -159,7 +159,7 @@
     "/api/v1/admin/colab/register": {
       "post": {
         "operationId": "registerColabRuntime",
-        "description": "Register or replace the active Colab runtime using the separate administrator token.",
+        "description": "Legacy direct registration, used only when the existing heartbeat registry is not configured.",
         "security": [
           {
             "colabAdminAuth": []
@@ -251,7 +251,7 @@
     "/api/v1/admin/colab/heartbeat": {
       "post": {
         "operationId": "heartbeatColabRuntime",
-        "description": "Refresh the current runtime TTL and optionally update its URL, model, key, or capabilities. Authenticated by the session heartbeat token.",
+        "description": "Legacy direct-session heartbeat, used only when the existing heartbeat registry is not configured.",
         "security": [
           {
             "colabSessionAuth": []
@@ -294,6 +294,7 @@
     "/api/v1/colab/status": {
       "get": {
         "operationId": "getColabStatus",
+        "description": "Reports the active runtime from the existing heartbeat registry when configured; never returns its URL or API key.",
         "responses": {
           "200": {
             "description": "Current runtime liveness; secrets and upstream URLs are never returned.",
@@ -311,6 +312,7 @@
     "/api/v1/colab/capabilities": {
       "get": {
         "operationId": "getColabCapabilities",
+        "description": "Reports currently supported chat capability for the active runtime.",
         "responses": {
           "200": {
             "description": "Current runtime liveness and advertised module capabilities.",

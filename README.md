@@ -109,15 +109,19 @@ curl http://localhost:3080/health
 |----------|---------|
 | `IRCO_HOST` / `IRCO_PORT` | Bind address and port (default `3080`) |
 | `IRCO_API_TOKEN` | Enables bearer authentication on every route except `/health`, `/version`, and `/openapi.json` |
-| `IRCO_COLAB_ADMIN_TOKEN` | Separate bearer token required to register or revoke Colab; registration is disabled when absent |
-| `IRCO_COLAB_TTL_SECONDS` | Colab heartbeat expiry window in seconds (30–3600, default 180) |
+| `IRCO_COLAB_ADMIN_TOKEN` | Separate bearer token for legacy direct registration when the existing heartbeat registry is not configured |
+| `IRCO_COLAB_REGISTRY_URL` | Existing internal heartbeat registry URL (default `http://127.0.0.1:8765/api/backends/internal`) |
+| `IRCO_COLAB_REGISTRY_TOKEN` | Existing heartbeat registry token; falls back to `HB_SECRET` |
+| `IRCO_COLAB_TTL_SECONDS` | Maximum heartbeat age in seconds (30–3600, default 600) |
 | `IRCO_CORPUS_PATH` | Overrides the default knowledge corpus location (`data/corpus.jsonl`) |
 
-The assistant uses the current, unexpired Colab registry session and falls
-back locally when Colab is unavailable. It sends only relevant scientific
+The assistant reads the active runtime from the existing Colab heartbeat
+registry and falls back locally when Colab is unavailable. It sends only relevant scientific
 sources; health state is sent only when explicitly requested with a subject ID
 and data class to an active registered runtime. The current VPS notebook
-supports text chat only; multimodal endpoints are not enabled. See
+supports text chat only through IRCO; multimodal endpoints are not enabled.
+The notebook continues sending heartbeats on the existing service at port
+`8765`; IRCO's API remains on port `3080` by default. See
 [`colab/README.md`](colab/README.md).
 
 ## API Endpoints

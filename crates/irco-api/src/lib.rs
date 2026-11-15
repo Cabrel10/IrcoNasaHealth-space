@@ -17,7 +17,7 @@ use axum::{
     routing::{get, patch, post},
     Json, Router,
 };
-use irco_ai::compose_answer;
+use irco_ai::{compose_answer, current_colab_runtime};
 use irco_alerts::{
     create_alert, init_db as init_alerts_db, list_alerts, record_followup_measurement,
     transition_alert,
@@ -59,6 +59,8 @@ pub struct AppState {
     colab_admin_token: Option<String>,
     colab_ttl: Duration,
     colab_session: Arc<Mutex<Option<ColabSession>>>,
+    colab_registry_url: Option<String>,
+    colab_registry_token: Option<String>,
 }
 
 impl AppState {
@@ -74,6 +76,8 @@ impl AppState {
             colab_admin_token: None,
             colab_ttl: Duration::from_secs(180),
             colab_session: Arc::new(Mutex::new(None)),
+            colab_registry_url: None,
+            colab_registry_token: None,
         }
     }
 
@@ -99,7 +103,7 @@ impl AppState {
                     IrcoError::Config(format!("Invalid IRCO_COLAB_TTL_SECONDS: {error}"))
                 })
             })
-            .unwrap_or(Ok(180))?;
+            .unwrap_or(Ok(600))?;
         if !(30..=3600).contains(&colab_ttl) {
             return Err(IrcoError::Config(
                 "IRCO_COLAB_TTL_SECONDS must be between 30 and 3600".to_owned(),
@@ -124,6 +128,15 @@ impl AppState {
         let mut state = Self::new(database, rules, api_token);
         state.colab_admin_token = env::var("IRCO_COLAB_ADMIN_TOKEN").ok();
         state.colab_ttl = Duration::from_secs(colab_ttl);
+        state.colab_registry_token = env::var("IRCO_COLAB_REGISTRY_TOKEN")
+            .or_else(|_| env::var("HB_SECRET"))
+            .ok();
+        if state.colab_registry_token.is_some() {
+            state.colab_registry_url = Some(
+                env::var("IRCO_COLAB_REGISTRY_URL")
+                    .unwrap_or_else(|_| "http://127.0.0.1:8765/api/backends/internal".to_owned()),
+            );
+        }
         state.rules_path = Some(Arc::new(PathBuf::from(rules_path)));
         state.indicators = Arc::new(Some(registry));
         if FsPath::new(&corpus_path).is_file() {
@@ -200,7 +213,48 @@ struct ColabStatusResponse {
 }
 
 impl AppState {
-    fn colab_status(&self) -> ColabStatusResponse {
+    async fn read_registry_runtime(&self) -> Option<irco_ai::ColabRuntime> {
+        let registry_url = self.colab_registry_url.as_deref()?;
+        let registry_token = self.colab_registry_token.as_deref()?;
+        current_colab_runtime(registry_url, registry_token, self.colab_ttl).await
+    }
+
+    async fn colab_status(&self) -> ColabStatusResponse {
+        if self.colab_registry_url.is_some() {
+            let runtime = self.read_registry_runtime().await;
+            return runtime.map_or_else(
+                || ColabStatusResponse {
+                    available: false,
+                    session_id: None,
+                    model: None,
+                    capabilities: None,
+                    expires_in_seconds: None,
+                },
+                |runtime| {
+                    let remaining = self
+                        .colab_ttl
+                        .as_secs()
+                        .saturating_sub(runtime.age_seconds());
+                    ColabStatusResponse {
+                        available: true,
+                        session_id: runtime.session_id().map(str::to_owned),
+                        model: Some(runtime.model().to_owned()),
+                        capabilities: Some(ColabCapabilities {
+                            chat: true,
+                            asr: false,
+                            tts: false,
+                            vision: false,
+                            vlm: false,
+                            image: false,
+                            multi: false,
+                            streaming: false,
+                        }),
+                        expires_in_seconds: Some(remaining),
+                    }
+                },
+            );
+        }
+
         let Ok(mut session) = self.colab_session.lock() else {
             return ColabStatusResponse {
                 available: false,
@@ -263,7 +317,17 @@ impl AppState {
         Ok(())
     }
 
-    fn active_colab_endpoint(&self) -> Result<Option<(String, String, String)>, ApiError> {
+    async fn active_colab_endpoint(&self) -> Result<Option<(String, String, String)>, ApiError> {
+        if self.colab_registry_url.is_some() {
+            return Ok(self.read_registry_runtime().await.map(|runtime| {
+                (
+                    runtime.api_base().to_owned(),
+                    runtime.api_key().to_owned(),
+                    runtime.model().to_owned(),
+                )
+            }));
+        }
+
         let mut session = self.colab_session.lock().map_err(|_| {
             api_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -637,10 +701,14 @@ async fn authenticate(
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let database_ok = state.database.lock().is_ok();
-    let rules = state.rules.read();
-    let rules_ok = rules.is_ok();
-    let rules_loaded = rules.as_ref().map_or(0, |rules| rules.rules.len());
-    let colab_available = state.colab_status().available;
+    let (rules_ok, rules_loaded) = {
+        let rules = state.rules.read();
+        (
+            rules.is_ok(),
+            rules.as_ref().map_or(0, |rules| rules.rules.len()),
+        )
+    };
+    let colab_available = state.colab_status().await.available;
     Json(HealthResponse {
         status: if database_ok && rules_ok {
             "ok"
@@ -667,11 +735,11 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 }
 
 async fn colab_status(State(state): State<AppState>) -> Json<ColabStatusResponse> {
-    Json(state.colab_status())
+    Json(state.colab_status().await)
 }
 
 async fn colab_capabilities(State(state): State<AppState>) -> Json<ColabStatusResponse> {
-    Json(state.colab_status())
+    Json(state.colab_status().await)
 }
 
 async fn register_colab(
@@ -768,59 +836,60 @@ async fn colab_heartbeat(
         ));
     }
 
-    let mut current = state.colab_session.lock().map_err(|_| {
-        api_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "colab_registry_unavailable",
-            "The Colab registry is unavailable",
-            "Retry the heartbeat request.",
-        )
-    })?;
-    if current
-        .as_ref()
-        .is_none_or(|session| session.last_heartbeat.elapsed() >= state.colab_ttl)
     {
-        *current = None;
-        return Err(api_error(
-            StatusCode::UNAUTHORIZED,
-            "colab_session_expired",
-            "The Colab session is missing or expired",
-            "Register a new Colab session with the administrator token.",
-        ));
+        let mut current = state.colab_session.lock().map_err(|_| {
+            api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "colab_registry_unavailable",
+                "The Colab registry is unavailable",
+                "Retry the heartbeat request.",
+            )
+        })?;
+        if current
+            .as_ref()
+            .is_none_or(|session| session.last_heartbeat.elapsed() >= state.colab_ttl)
+        {
+            *current = None;
+            return Err(api_error(
+                StatusCode::UNAUTHORIZED,
+                "colab_session_expired",
+                "The Colab session is missing or expired",
+                "Register a new Colab session with the administrator token.",
+            ));
+        }
+        let Some(session) = current.as_mut() else {
+            return Err(api_error(
+                StatusCode::UNAUTHORIZED,
+                "colab_session_expired",
+                "The Colab session is missing or expired",
+                "Register a new Colab session with the administrator token.",
+            ));
+        };
+        if supplied_token != Some(session.heartbeat_token.as_str())
+            || request.session_id != session.session_id
+        {
+            return Err(api_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_colab_session",
+                "The Colab session credentials are invalid",
+                "Use the session ID and heartbeat token returned by registration.",
+            ));
+        }
+        if let Some(api_base) = updated_api_base {
+            session.api_base = api_base;
+        }
+        if let Some(api_key) = request.api_key {
+            session.api_key = api_key;
+        }
+        if let Some(model) = request.model {
+            session.model = model;
+        }
+        if let Some(capabilities) = request.capabilities {
+            session.capabilities = capabilities;
+        }
+        session.last_heartbeat = Instant::now();
     }
-    let Some(session) = current.as_mut() else {
-        return Err(api_error(
-            StatusCode::UNAUTHORIZED,
-            "colab_session_expired",
-            "The Colab session is missing or expired",
-            "Register a new Colab session with the administrator token.",
-        ));
-    };
-    if supplied_token != Some(session.heartbeat_token.as_str())
-        || request.session_id != session.session_id
-    {
-        return Err(api_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_colab_session",
-            "The Colab session credentials are invalid",
-            "Use the session ID and heartbeat token returned by registration.",
-        ));
-    }
-    if let Some(api_base) = updated_api_base {
-        session.api_base = api_base;
-    }
-    if let Some(api_key) = request.api_key {
-        session.api_key = api_key;
-    }
-    if let Some(model) = request.model {
-        session.model = model;
-    }
-    if let Some(capabilities) = request.capabilities {
-        session.capabilities = capabilities;
-    }
-    session.last_heartbeat = Instant::now();
-    drop(current);
-    Ok(Json(state.colab_status()))
+    Ok(Json(state.colab_status().await))
 }
 
 async fn revoke_colab(
@@ -2206,7 +2275,7 @@ async fn assistant(
     if hits.is_empty() {
         return Ok(Json(compose_answer(&hits)));
     }
-    let answer = if let Some((api_base, api_key, model)) = state.active_colab_endpoint()? {
+    let answer = if let Some((api_base, api_key, model)) = state.active_colab_endpoint().await? {
         let health_context = if let (Some(subject_id), Some(data_class)) =
             (request.subject_id.as_deref(), request.data_class.as_deref())
         {
@@ -2997,6 +3066,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn colab_status_reads_the_active_heartbeat_registry() {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            thread,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let registry = serde_json::json!({
+            "active": "crew-a",
+            "backends": {
+                "crew-a": {
+                    "api_base": "https://colab.example.test/v1",
+                    "api_key": "test-key",
+                    "model": "qwen-test",
+                    "session_id": "session-01",
+                    "age_sec": 12
+                }
+            }
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            registry.len(),
+            registry
+        );
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let mut state = AppState::new(
+            database,
+            RulesDocument {
+                version: "test".to_owned(),
+                rules: Vec::new(),
+            },
+            None,
+        );
+        state.colab_ttl = Duration::from_secs(600);
+        state.colab_registry_url = Some(format!("http://{address}/api/backends"));
+        state.colab_registry_token = Some("mock-registry-token".to_owned());
+        let response = router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/colab/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["available"], true);
+        assert_eq!(body["model"], "qwen-test");
+        assert_eq!(body["expires_in_seconds"], 588);
+        assert!(body.get("api_key").is_none());
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
     async fn health_reports_optional_services_as_unavailable() {
         let response = test_app(None)
             .oneshot(
@@ -3522,8 +3663,8 @@ mod tests {
         assert_eq!(error["code"], "invalid_health_context");
     }
 
-    #[test]
-    fn assistant_uses_only_an_unexpired_registered_chat_session() {
+    #[tokio::test]
+    async fn assistant_uses_only_an_unexpired_registered_chat_session() {
         let database = Connection::open_in_memory().unwrap();
         let mut state = AppState::new(
             database,
@@ -3552,7 +3693,7 @@ mod tests {
             last_heartbeat: Instant::now(),
         });
         assert_eq!(
-            state.active_colab_endpoint().map_err(|_| ()).unwrap(),
+            state.active_colab_endpoint().await.map_err(|_| ()).unwrap(),
             Some((
                 "https://colab.example.test/v1".to_owned(),
                 "private-key".to_owned(),
@@ -3560,7 +3701,10 @@ mod tests {
             ))
         );
         state.colab_ttl = Duration::ZERO;
-        assert_eq!(state.active_colab_endpoint().map_err(|_| ()).unwrap(), None);
+        assert_eq!(
+            state.active_colab_endpoint().await.map_err(|_| ()).unwrap(),
+            None
+        );
         assert!(state.colab_session.lock().unwrap().is_none());
     }
 

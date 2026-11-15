@@ -20,6 +20,58 @@ struct ColabEndpoint {
     model: String,
 }
 
+pub struct ColabRuntime {
+    account: String,
+    session_id: Option<String>,
+    api_base: String,
+    api_key: String,
+    model: String,
+    age_seconds: u64,
+}
+
+impl ColabRuntime {
+    pub fn api_base(&self) -> &str {
+        &self.api_base
+    }
+
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
+
+    pub fn account(&self) -> &str {
+        &self.account
+    }
+
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    pub fn age_seconds(&self) -> u64 {
+        self.age_seconds
+    }
+
+    pub async fn answer(
+        &self,
+        question: &str,
+        health_context: Option<&str>,
+        hits: &[SearchHit],
+    ) -> Option<AssistantAnswer> {
+        answer_with_colab(
+            &self.api_base,
+            &self.api_key,
+            &self.model,
+            question,
+            health_context,
+            hits,
+        )
+        .await
+    }
+}
+
 fn endpoint_from_parts(api_base: &str, api_key: &str, model: &str) -> Option<ColabEndpoint> {
     if api_key.is_empty() || model.trim().is_empty() {
         return None;
@@ -54,6 +106,100 @@ fn endpoint_from_parts(api_base: &str, api_key: &str, model: &str) -> Option<Col
     })
 }
 
+/// Read the live runtime from the existing heartbeat registry.
+/// The token is sent only to the configured registry and is never logged.
+pub async fn current_colab_runtime(
+    registry_url: &str,
+    registry_token: &str,
+    ttl: Duration,
+) -> Option<ColabRuntime> {
+    let url = Url::parse(registry_url).ok()?;
+    let loopback_http = url.scheme() == "http"
+        && url
+            .host_str()
+            .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "[::1]"));
+    if (url.scheme() != "https" && !loopback_http)
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        warn!("Colab registry URL must use HTTPS or loopback HTTP");
+        return None;
+    }
+
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(2))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            warn!("Cannot initialize Colab registry client");
+            return None;
+        }
+    };
+    let response = match client
+        .get(url)
+        .header("X-Internal-Token", registry_token)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(_) => {
+            warn!("Colab registry request failed; using the extractive fallback");
+            return None;
+        }
+    };
+    let response = match response.error_for_status() {
+        Ok(response) => response,
+        Err(error) => {
+            warn!(
+                status = error.status().map(|status| status.as_u16()),
+                "Colab registry rejected the request; using the extractive fallback"
+            );
+            return None;
+        }
+    };
+    let registry = match response.json::<Value>().await {
+        Ok(registry) => registry,
+        Err(_) => {
+            warn!("Colab registry returned invalid JSON; using the extractive fallback");
+            return None;
+        }
+    };
+
+    parse_colab_runtime(registry, ttl)
+}
+
+fn parse_colab_runtime(registry: Value, ttl: Duration) -> Option<ColabRuntime> {
+    let account = registry.get("active")?.as_str()?;
+    let entry = registry.get("backends")?.get(account)?;
+    if entry.get("stale").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
+    let age_seconds = entry.get("age_sec")?.as_u64()?;
+    if age_seconds > ttl.as_secs() {
+        return None;
+    }
+    let api_base = entry.get("api_base")?.as_str()?;
+    let api_key = entry.get("api_key")?.as_str()?;
+    let model = entry.get("model")?.as_str()?;
+    endpoint_from_parts(api_base, api_key, model)?;
+
+    Some(ColabRuntime {
+        account: account.to_owned(),
+        session_id: entry
+            .get("session_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        api_base: api_base.to_owned(),
+        api_key: api_key.to_owned(),
+        model: model.to_owned(),
+        age_seconds,
+    })
+}
+
 /// Keep only evidence above the retrieval threshold and bound the prompt size.
 pub fn relevant_hits(hits: &[SearchHit]) -> Vec<SearchHit> {
     hits.iter()
@@ -80,7 +226,7 @@ pub async fn answer_with_colab(
         question,
         health_context,
         hits,
-        Duration::from_secs(8),
+        Duration::from_secs(15),
     )
     .await
 }
@@ -268,7 +414,8 @@ pub fn compose_answer(hits: &[SearchHit]) -> AssistantAnswer {
 mod tests {
     use super::{
         answer_with_colab, answer_with_colab_timeout, cited_sources, compose_answer,
-        endpoint_from_parts, relevant_hits, MEDICAL_DISCLAIMER,
+        current_colab_runtime, endpoint_from_parts, parse_colab_runtime, relevant_hits,
+        MEDICAL_DISCLAIMER,
     };
     use irco_knowledge::{Citation, EvidenceKind, SearchHit};
     use serde_json::{json, Value};
@@ -277,6 +424,7 @@ mod tests {
         net::TcpListener,
         sync::mpsc::{self, Receiver},
         thread::{self, JoinHandle},
+        time::Duration,
     };
 
     fn test_hit(score: f64) -> SearchHit {
@@ -349,6 +497,125 @@ mod tests {
             .unwrap();
         });
         (format!("http://{address}/v1"), receiver, task)
+    }
+
+    fn mock_registry(
+        status: &'static str,
+        response_body: String,
+    ) -> (String, Receiver<String>, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let task = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = Vec::new();
+            reader.read_until(b'\n', &mut line).unwrap();
+            let mut token = String::new();
+            loop {
+                line.clear();
+                reader.read_until(b'\n', &mut line).unwrap();
+                if line == b"\r\n" || line.is_empty() {
+                    break;
+                }
+                if let Some(value) = line
+                    .strip_prefix(b"X-Internal-Token:")
+                    .or_else(|| line.strip_prefix(b"x-internal-token:"))
+                {
+                    token = String::from_utf8_lossy(value).trim().to_owned();
+                }
+            }
+            let _ = sender.send(token);
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+                response_body.len(),
+            )
+            .unwrap();
+        });
+        (format!("http://{address}/api/backends"), receiver, task)
+    }
+
+    #[test]
+    fn heartbeat_registry_accepts_only_the_active_fresh_backend() {
+        let entry = json!({
+            "api_base": "https://colab.example.test/v1",
+            "api_key": "test-key",
+            "model": "qwen-test",
+            "session_id": "session-01",
+            "age_sec": 45,
+            "stale": false
+        });
+        let registry = json!({
+            "active": "crew-a",
+            "backends": {"crew-a": entry.clone()}
+        });
+        let runtime = parse_colab_runtime(registry.clone(), Duration::from_secs(60)).unwrap();
+        assert_eq!(runtime.account(), "crew-a");
+        assert_eq!(runtime.session_id(), Some("session-01"));
+        assert_eq!(runtime.model(), "qwen-test");
+        assert_eq!(runtime.age_seconds(), 45);
+
+        assert!(parse_colab_runtime(registry, Duration::from_secs(30)).is_none());
+        let mut stale = entry;
+        stale["stale"] = json!(true);
+        assert!(parse_colab_runtime(
+            json!({"active": "crew-a", "backends": {"crew-a": stale}}),
+            Duration::from_secs(60)
+        )
+        .is_none());
+    }
+
+    #[tokio::test]
+    async fn heartbeat_registry_fetch_uses_token_and_falls_back_on_rejection() {
+        let body = json!({
+            "active": "crew-a",
+            "backends": {
+                "crew-a": {
+                    "api_base": "https://colab.example.test/v1",
+                    "api_key": "test-key",
+                    "model": "qwen-test",
+                    "session_id": "session-01",
+                    "age_sec": 10
+                }
+            }
+        })
+        .to_string();
+        let (url, received_token, task) = mock_registry("200 OK", body);
+        let runtime = current_colab_runtime(&url, "mock-registry-token", Duration::from_secs(60))
+            .await
+            .unwrap();
+        assert_eq!(runtime.model(), "qwen-test");
+        assert_eq!(received_token.recv().unwrap(), "mock-registry-token");
+        task.join().unwrap();
+
+        let (url, received_token, task) =
+            mock_registry("403 Forbidden", r#"{"error":"forbidden"}"#.to_owned());
+        assert!(
+            current_colab_runtime(&url, "wrong-test-token", Duration::from_secs(60))
+                .await
+                .is_none()
+        );
+        assert_eq!(received_token.recv().unwrap(), "wrong-test-token");
+        task.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn heartbeat_registry_rejects_malformed_and_non_loopback_http_urls() {
+        let (url, _, task) = mock_registry("200 OK", "{malformed".to_owned());
+        assert!(
+            current_colab_runtime(&url, "mock-token", Duration::from_secs(60))
+                .await
+                .is_none()
+        );
+        task.join().unwrap();
+        assert!(current_colab_runtime(
+            "http://registry.example.test/api/backends",
+            "mock-token",
+            Duration::from_secs(60)
+        )
+        .await
+        .is_none());
     }
 
     #[test]

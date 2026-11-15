@@ -89,11 +89,21 @@ Health check endpoint. Always available.
 
 ### Colab runtime registration and status
 
-The VPS registers a Colab endpoint using HTTPS only. Registration replaces
-any current session and returns a new session ID and heartbeat token; the old
-token cannot refresh the replacement session. `IRCO_COLAB_TTL_SECONDS`
-controls the in-memory liveness window (30–3600 seconds, default 180). A
-process restart clears the registration and requires a new registration.
+When the existing heartbeat registry is configured, it is the source of truth
+for Colab availability and the active runtime URL. IRCO reads
+`IRCO_COLAB_REGISTRY_URL` (default
+`http://127.0.0.1:8765/api/backends/internal`) with
+`X-Internal-Token: <IRCO_COLAB_REGISTRY_TOKEN>`; `HB_SECRET` is accepted as a
+fallback for the token setting. Registry access has a two-second timeout.
+`IRCO_COLAB_TTL_SECONDS` controls the accepted heartbeat age
+(30–3600 seconds, default 600). A stale, missing, malformed, or inaccessible
+registry results in `colab_available: false` and local assistant fallback.
+
+The older direct registration routes remain for compatibility when the
+heartbeat registry is not configured. Registration replaces any current
+in-memory session and returns a new session ID and heartbeat token; the old
+token cannot refresh the replacement session. A process restart clears this
+legacy registration and requires a new one.
 
 `POST /api/v1/admin/colab/register` requires `IRCO_COLAB_ADMIN_TOKEN` and JSON:
 ```json
@@ -124,8 +134,11 @@ An expired, revoked, or replaced session cannot be revived with an old token.
 `GET /api/v1/colab/status` and `GET /api/v1/colab/capabilities` expose current
 liveness, model, enabled modules, and remaining TTL, but not the tunnel URL or
 credentials. `/health` reports the same TTL-based liveness in
-`colab_available` and `ai_available`. The registry is currently in memory;
-after a VPS restart it is unavailable until Colab registers again.
+`colab_available` and `ai_available`. With the existing heartbeat registry,
+availability follows that service's active backend and TTL rather than an
+IRCO-owned in-memory registration. Chat requests use the active runtime's
+`/v1/chat/completions` route with a 15-second timeout; streaming and
+multimodal routes are not relayed.
 
 ---
 
