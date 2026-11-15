@@ -18,12 +18,19 @@ does not expose compatible audio or image endpoints, so IRCO does not advertise
 multimodal capabilities yet. A future multimodal notebook must expose and
 document those endpoints before they can be enabled.
 
-The notebook currently sends its heartbeat to the separate Colab bridge, not
-to IRCO's registry. Until that notebook is wired to IRCO registration, use the
-registration API explicitly with the administrator credential held outside
-Git. Keep the returned heartbeat token only in the notebook runtime and send
-it as a bearer token on heartbeat requests; re-register after either side
-restarts or the session expires.
+Notebook cell 8 can register its current HTTPS tunnel directly with IRCO. Add
+these Colab secrets (never to notebook source or Git):
+
+| Secret | Value |
+|---|---|
+| `irco_api_base` | HTTPS base URL of the IRCO API, without `/api/v1` |
+| `irco_admin_token` | The VPS `IRCO_COLAB_ADMIN_TOKEN` |
+
+It uses the notebook's existing `api_key` as the upstream chat key, advertises
+chat only, and refreshes the session every 60 seconds. The returned heartbeat
+token stays in notebook memory; after a `401` it re-registers. The older `vps`
+and `hex` secrets remain optional for the separate Colab bridge. The notebook
+does not enable or advertise ASR, TTS, vision, multimodal, or streaming routes.
 
 Do not copy or commit the VPS `.env`, heartbeat secrets, account files,
 generated tunnel URLs, or notebook outputs into this repository.
