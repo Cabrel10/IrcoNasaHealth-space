@@ -2,9 +2,63 @@
 
 **NASA Space Apps Challenge 2026 — Healthcare Track**
 
-> *Transform heterogeneous observations into coherent, traceable, temporal, and explainable health surveillance for astronauts.*
+> Transform heterogeneous observations into coherent, traceable, temporal,
+> and explainable health surveillance for astronauts.
+
+![Language](https://img.shields.io/badge/language-Rust%20%2B%20Python-blue)
+![API](https://img.shields.io/badge/API-Axum%20(Rust)-orange)
+![Status](https://img.shields.io/badge/status-prototype%20%2F%20in%20progress-yellow)
 
 ---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [API Endpoints](#api-endpoints)
+- [Data Classes — Never Mixed](#data-classes--never-mixed)
+- [Project Structure](#project-structure)
+- [Design Principles](#design-principles)
+- [Testing](#testing)
+- [Project Status](#project-status)
+- [Documentation](#documentation)
+- [License](#license)
+
+## Overview
+
+IRCO is a deterministic health-surveillance backend for space crews. It
+ingests heterogeneous observations (real telemetry, analog human datasets,
+synthetic scenarios), stores them with full provenance, evaluates
+transparent rule-based health indicators over time, and raises persistent,
+traceable alerts. A curated NASA/CSA knowledge corpus with offline BM25
+search provides cited, source-grounded explanations.
+
+Determinism and auditability come first: the monitoring pipeline runs
+entirely without any LLM, and every conclusion can be traced back to its
+source data.
+
+## Key Features
+
+- **Ingestion & storage** — SQLite observation store with idempotent exact
+  replay, conflict rejection, indexed queries, and data-class filtering.
+- **Deterministic rules engine** — absolute-threshold, personal-baseline
+  deviation, and signed trend-slope conditions, plus persistent deviation
+  across consecutive valid readings, scoped to one subject / class /
+  indicator / unit.
+- **AND/OR composite rules** — deterministic evaluation over rule IDs
+  already triggered for one subject and data class, with strict validation
+  (no empty, duplicate, unknown, or nested references).
+- **Alert lifecycle** — persisted, idempotent alerts with rule validation
+  status, source, data class, and follow-up measurements.
+- **Temporal health state** — per-subject health overview with freshness
+  evaluation, `as_of` deterministic replay, and missing-indicator reporting.
+- **Knowledge & assistant** — curated NASA/CSA summary corpus, offline BM25
+  search, and an extractive, citation-preserving assistant fallback
+  (no LLM required).
+- **Offline demo** — replayable synthetic scenarios (A-01, nominal,
+  dropout) with explicit synthetic labels.
 
 ## Architecture
 
@@ -13,65 +67,68 @@
 │                   IRCO API (Rust/Axum)                  │
 │       Port 3080 · Auth · Routes · Orchestration         │
 ├──────────────┬──────────────────┬────────────────────────┤
-│  PARTIE 1    │    PARTIE 2      │      PARTIE 3          │
+│  PART 1      │    PART 2        │      PART 3            │
 │  Data        │    Health        │      Knowledge & AI    │
 │  Platform    │    Intelligence  │                        │
 │              │                  │                        │
 │  Python+Rust │    Rust          │      Python+Rust       │
 │              │                  │                        │
-│  Acquisition │  Indicators     │  NASA/CSA corpus       │
-│  Validation  │  Temporal       │  BM25 search           │
-│  Normalize   │  Baseline       │  Assistant             │
-│  Storage     │  Correlations   │  Multimodal adapters   │
-│  Provenance  │  Anomalies      │  Model relay           │
-│              │  Decision       │                        │
-│              │  Alerts/Followup│                        │
+│  Acquisition │  Indicators      │  NASA/CSA corpus       │
+│  Validation  │  Temporal        │  BM25 search           │
+│  Normalize   │  Baseline        │  Assistant             │
+│  Storage     │  Correlations    │  Multimodal adapters   │
+│  Provenance  │  Anomalies       │  Model relay           │
+│              │  Decision        │                        │
+│              │  Alerts/Followup │                        │
 ├──────────────┴──────────────────┴────────────────────────┤
-│                   Shared Storage                         │
+│                   Shared Storage                        │
 │  SQLite · Raw files · JSONL · Manifests · Audit log     │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
 
+Prerequisites: **Rust** (stable) and **Python 3** with no additional
+packages required for the contract tests.
+
 ```bash
-# Build the API with a single Cargo job (suitable for the small VPS)
+# 1. Build the API (single Cargo job — suitable for small VPS)
 CARGO_BUILD_JOBS=1 cargo build --bin irco-api
 
-# Start the API (from the repository root)
+# 2. Start the API from the repository root
 IRCO_HOST=127.0.0.1 IRCO_PORT=3080 cargo run --bin irco-api
 
-# Health check (public, no token required)
+# 3. Health check (public, no token required)
 curl http://localhost:3080/health
 ```
 
-Set `IRCO_API_TOKEN` to protect all routes except `/health`, `/version` and
-`/openapi.json` with bearer authentication.
-From the repository root, the API loads `data/corpus.jsonl` by default;
-`IRCO_CORPUS_PATH` overrides that location.
-The current API includes health/version, rules and indicators, observation
-ingestion/history/export, temporal state, alert lifecycle, demo replay, BM25
-search and citation-preserving assistant fallback. Ingestion evaluates enabled
-deterministic rules and creates persisted alerts only for observations with
-valid quality. The engine supports absolute
-threshold, explicit personal-baseline deviation and signed trend-slope
-conditions, and persistent deviation across a configured number of consecutive
-valid readings. Persistence is scoped to one subject, class, indicator and
-unit, and requires an explicit nonzero baseline and direction. The health-state
-endpoint also evaluates configured freshness rules and AND/OR composites of
-already-triggered rule IDs within one subject and data class. The demo
-missing-data rule is illustrative and limited to synthetic observations;
-the composite rule remains disabled pending validation. Configured demo rules
-do not apply unvalidated thresholds to real or analog data. A curated NASA/CSA summary corpus ships at
-`data/corpus.jsonl`; BM25 search and source citations operate offline without an
-LLM. Search/assistant responses label curated summaries separately from source
-excerpts. Corpus source dates are distinct from extraction timestamps. No
-automated source refresh pipeline or archived source pages are included yet. AI/Colab
-remains optional and is not delivered as an operational service. The API
-contract is `contracts/api.md`; implemented routes are described in
-`docs/api/openapi.yaml`.
+### Configuration
 
-## Data Classes — NEVER Mixed
+| Variable | Purpose |
+|----------|---------|
+| `IRCO_HOST` / `IRCO_PORT` | Bind address and port (default `3080`) |
+| `IRCO_API_TOKEN` | Enables bearer authentication on every route except `/health`, `/version`, and `/openapi.json` |
+| `IRCO_CORPUS_PATH` | Overrides the default knowledge corpus location (`data/corpus.jsonl`) |
+
+## API Endpoints
+
+Full contract: [`contracts/api.md`](contracts/api.md) ·
+OpenAPI: [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
+
+| Area | Endpoints |
+|------|-----------|
+| System | `GET /health`, `GET /version`, `GET /openapi.json` |
+| Registry & state | `GET /api/v1/rules`, `POST /api/v1/admin/rules/reload`, `GET /api/v1/indicators`, `GET /api/v1/indicators/{id}`, `GET /api/v1/state?data_class=…`, `GET /api/v1/state/{subject_id}?data_class=…` |
+| Data | `POST /api/v1/ingest`, `GET /api/v1/observations`, `GET /api/v1/observations/export` |
+| Alerts | `GET /api/v1/alerts`, `PATCH /api/v1/alerts/{id}`, `POST /api/v1/alerts/{id}/followup` |
+| Knowledge | `GET /api/v1/knowledge/search`, `POST /api/v1/assistant/chat`, `GET /api/v1/knowledge/health`, `GET /api/v1/knowledge/hazards`, `GET /api/v1/knowledge/indicator/{id}` |
+| Offline demo | `GET /api/v1/demo/scenarios`, `GET /api/v1/demo/replay`, `GET /api/v1/demo/scenario`, `POST /api/v1/demo/reset` |
+
+## Data Classes — Never Mixed
+
+Every observation and alert carries its `data_class`. Synthetic scenarios
+are for demonstrations only and are never represented as astronaut
+measurements.
 
 | Class | Meaning | Examples |
 |-------|---------|----------|
@@ -79,20 +136,12 @@ contract is `contracts/api.md`; implemented routes are described in
 | `analog` | Real human data, not astronauts | MIMIC-IV, MHEALTH, Sleep-EDF |
 | `synthetic` | Generated by IRCO | Scenario A-01 |
 
-Every observation and alert carries its `data_class`. Synthetic scenarios are
-for demonstrations only; they are never represented as astronaut measurements.
-
 ## Project Structure
 
 ```
 nase/
 ├── Cargo.toml          # Workspace
-├── contracts/          # Schemas & API contract (v0)
-│   ├── pivot.schema.json
-│   ├── rules.schema.json
-│   ├── manifest.schema.json
-│   ├── corpus.schema.json
-│   └── api.md
+├── contracts/          # JSON schemas & API contract (v0)
 ├── crates/             # 8 Rust crates
 │   ├── irco-api/       # HTTP server (Axum)
 │   ├── irco-core/      # Shared types & config
@@ -103,33 +152,26 @@ nase/
 │   ├── irco-knowledge/ # BM25 search & corpus
 │   └── irco-ai/        # Model gateway & relay
 ├── python/             # Data acquisition & knowledge
-├── config/             # Server, sources & indicators
+├── config/             # Server, sources & indicator registry
 ├── rules/              # Decision rules (JSON)
-├── data/               # Raw, normalized, manifests
-├── docs/               # Architecture & API docs
+├── data/               # Raw data, normalized data, manifests
+├── docs/               # Architecture, API & scientific validation docs
 └── tests/              # Integration tests & fixtures
 ```
 
-## Non-Negotiable Rules
+## Design Principles
 
-1. LLMs **never** create alerts, modify rules, or override deterministic decisions
-2. Core monitoring works **without** any LLM or Colab connection
-3. Raw data files are **immutable** — never modified after download
-4. Every observation is **traceable** back to its source
-5. External source failures are **isolated** — one down source ≠ system down
-6. All thresholds marked `illustrative` until validated
-7. Synthetic data **never** produces alerts labeled as real measurements
+1. LLMs **never** create alerts, modify rules, or override deterministic
+   decisions.
+2. Core monitoring works **without** any LLM or Colab connection.
+3. Raw data files are **immutable** — never modified after download.
+4. Every observation is **traceable** back to its source.
+5. External source failures are **isolated** — one down source does not
+   take the system down.
+6. All thresholds are marked `illustrative` until scientifically validated.
+7. Synthetic data **never** produces alerts labeled as real measurements.
 
-## Development Phases
-
-| Phase | Scope | Depends on |
-|-------|-------|------------|
-| **C** (Contracts) | Schemas, API contract, indicator registry | — |
-| **D** (Data) | Collectors, normalizers, pivot builder | C |
-| **M** (Motor) | Health engine, rules, alerts, followup | C (fixtures first, then D) |
-| **K** (Knowledge) | Corpus, BM25, assistant, relay | C, M for context |
-
-## Validation
+## Testing
 
 Run the currently available focused checks from the repository root:
 
@@ -141,11 +183,33 @@ python3 tests/test_pivot_builder.py
 python3 tests/test_import_pivot.py
 ```
 
-The demo generator can replay A-01, nominal and dropout data with explicit
-synthetic labels. Clinical transition thresholds are not claimed: current
-rules are illustrative/provisional, and trend analysis is descriptive until
-rules have scientific validation.
+## Project Status
+
+**Prototype in active development — not delivery-ready.** Implemented
+today: schemas, ingestion/storage, the deterministic rules engine
+(including persistence and AND/OR composites), the alert lifecycle, the
+temporal health-state API, and offline BM25 search with a
+citation-preserving assistant fallback.
+
+Not yet delivered: analog-data import, composite alert persistence during
+ingestion, an automated source-refresh pipeline, archived source pages,
+and operational AI/Colab services (intentionally optional).
+
+All clinical thresholds are illustrative/provisional; trend analysis is
+descriptive until rules receive scientific validation. See
+[`docs/PROGRESS.md`](docs/PROGRESS.md) for the detailed, up-to-date report.
+
+## Documentation
+
+| Document | Content |
+|----------|---------|
+| [`contracts/api.md`](contracts/api.md) | Authoritative API contract (v0) |
+| [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | OpenAPI description of implemented routes |
+| [`docs/PROGRESS.md`](docs/PROGRESS.md) | Detailed implementation status |
+| [`docs/architecture/`](docs/architecture/README.md) | Architecture notes |
+| [`docs/data_sources/`](docs/data_sources/README.md) | External data sources |
+| [`docs/scientific_validation/`](docs/scientific_validation/README.md) | Validation approach |
 
 ## License
 
-NASA Space Apps Challenge 2026 — Open Innovation
+NASA Space Apps Challenge 2026 — Open Innovation.
