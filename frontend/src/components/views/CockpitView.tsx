@@ -7,6 +7,7 @@ import {
   Thermometer,
   Wind,
   Brain,
+  Moon,
   ChevronLeft,
   ChevronRight,
   TrendingUp,
@@ -25,19 +26,36 @@ import {
 } from 'recharts';
 
 import { useMissionStore } from '@/stores/useMissionStore';
-import { CYLINDER_METRICS, type CylinderMetric } from '@/constants/metrics';
+import { CYLINDER_METRICS, INDICATOR_IDS, type CylinderMetric } from '@/constants/metrics';
+import {
+  buildIndicatorMap,
+  metricValueText,
+  metricHistory as historyOf,
+  metricStatusVariant as statusVariantOf,
+  metricStatusText as statusTextOf,
+  metricBaseline as baselineOf,
+  metricBaselineSd as baselineSdOf,
+  globalLevelView,
+} from '@/services/dashboardValues';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { RingGauge } from '@/components/ui/RingGauge';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { MiniGlobe } from '@/components/ui/MiniGlobe';
-import { CountUp } from '@/components/ui/CountUp';
 import { useReducedMotion } from '@/hooks/useChrono';
 import { SPRING_SNAP } from '@/constants/motion';
 import astronautImg from '@/assets/hero.png';
 
 export const CockpitView: React.FC = () => {
-  const { selectedMetricId, setSelectedMetric, setActiveNav } = useMissionStore();
+  const {
+    selectedMetricId,
+    setSelectedMetric,
+    setActiveNav,
+    dashboard,
+    dashboardStatus,
+    dashboardDay,
+    setDashboardDay,
+  } = useMissionStore();
   const reducedMotion = useReducedMotion();
 
   // Cylinder state: current index 0..5
@@ -46,9 +64,6 @@ export const CockpitView: React.FC = () => {
   const [isHovered, setIsHovered] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-
-  // Live fluctuating data simulation
-  const [liveJitter, setLiveJitter] = useState({ hr: 68, spo2: 98, temp: 36.6, ghi: 94 });
 
   // Sync selected metric when currentIndex changes
   useEffect(() => {
@@ -101,22 +116,28 @@ export const CockpitView: React.FC = () => {
     }
   };
 
-  // Live jitter every 3s
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLiveJitter({
-        hr: 68 + (Math.floor(Math.random() * 3) - 1),
-        spo2: 98 + (Math.floor(Math.random() * 2) - 1),
-        temp: Math.round((36.6 + (Math.random() * 0.2 - 0.1)) * 10) / 10,
-        ghi: 94 + (Math.floor(Math.random() * 2) - 1),
-      });
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
+  // Live jitter (fake fluctuation) removed: values come from the IRCO API only.
 
   // Current metric data for right panel
   const activeMetric: CylinderMetric =
     CYLINDER_METRICS.find((m) => m.id === selectedMetricId) || CYLINDER_METRICS[0];
+
+  // ─── Real backend resolution (shared module, single source of truth) ──────
+  const indicatorMap = buildIndicatorMap(dashboard?.indicators);
+  const level = dashboard?.global?.level ?? 'no_data';
+  const { text: levelText, variant: globalVariant } = globalLevelView(dashboard?.global?.level);
+
+  const resolveMetric = (metricId: string) => ({ text: metricValueText(indicatorMap, metricId) });
+  const metricHistory = (metricId: string) => historyOf(indicatorMap, metricId);
+  const indicatorStatusVariant = (metricId: string) => statusVariantOf(indicatorMap, metricId);
+  const metricStatusText = (metricId: string) => statusTextOf(indicatorMap, metricId);
+  const metricBaseline = (metricId: string) => baselineOf(indicatorMap, metricId);
+  const metricBaselineSd = (metricId: string) => baselineSdOf(indicatorMap, metricId);
+
+  const spo2Metric = resolveMetric('spo2');
+  const tempMetric = resolveMetric('body-temp');
+  const sleeping = dashboardStatus === 'loading';
+  const backendDown = dashboardStatus === 'error';
 
   // Helper for metric icons
   const getMetricIcon = (name: string, className = 'w-6 h-6') => {
@@ -133,6 +154,8 @@ export const CockpitView: React.FC = () => {
         return <Wind className={className} />;
       case 'Brain':
         return <Brain className={className} />;
+      case 'Moon':
+        return <Moon className={className} />;
       default:
         return <Activity className={className} />;
     }
@@ -143,11 +166,47 @@ export const CockpitView: React.FC = () => {
       {/* Top Banner (Medical Truth Rule) */}
       <div className="flex items-center justify-between z-20 px-2 -mb-2">
         <div className="flex items-center gap-2">
-          <StatusPill label="DATA: MEASURED_REAL" variant="measured" showDot />
+          {backendDown ? (
+            <StatusPill label="BACKEND UNAVAILABLE" variant="critical" showDot />
+          ) : (
+            <>
+              <StatusPill
+                label={`DATA: ${(dashboard?.data_class ?? '…').toUpperCase()}`}
+                variant="synthetic"
+                showDot
+              />
+              <StatusPill label={`GLOBAL: ${level.toUpperCase()}`} variant={globalVariant} showDot />
+            </>
+          )}
           <StatusPill label="THRESHOLD: PROVISIONAL" variant="provisional" showDot />
         </div>
-        <div className="text-[11px] font-mono text-cyan-400/80 bg-[#081A30]/80 px-3 py-1 rounded-full border border-[#00CFFF]/25">
-          Aide à la décision, pas un diagnostic.
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 rounded-full bg-[#081A30]/80 px-2 py-1 border border-[#00CFFF]/25">
+            <button
+              type="button"
+              data-testid="day-prev"
+              onClick={() => setDashboardDay(dashboardDay - 1)}
+              className="px-1.5 text-[#00CFFF] hover:text-white disabled:opacity-30"
+              disabled={dashboardDay <= 1}
+            >
+              ‹
+            </button>
+            <span data-testid="day-label" className="text-[11px] font-mono text-[#00CFFF] uppercase">
+              Day {dashboardDay}
+            </span>
+            <button
+              type="button"
+              data-testid="day-next"
+              onClick={() => setDashboardDay(dashboardDay + 1)}
+              className="px-1.5 text-[#00CFFF] hover:text-white disabled:opacity-30"
+              disabled={dashboardDay >= 124}
+            >
+              ›
+            </button>
+          </div>
+          <div className="text-[11px] font-mono text-cyan-400/80 bg-[#081A30]/80 px-3 py-1 rounded-full border border-[#00CFFF]/25">
+            Aide à la décision, pas un diagnostic.
+          </div>
         </div>
       </div>
 
@@ -251,7 +310,11 @@ export const CockpitView: React.FC = () => {
                             {getMetricIcon(metric.iconName, 'w-5 h-5')}
                           </div>
                         </div>
-                        <StatusPill label={metric.status} variant="nominal" showDot={isFront} />
+                        <StatusPill
+                          label={sleeping ? '…' : (metricStatusText(metric.id))}
+                          variant={indicatorStatusVariant(metric.id)}
+                          showDot={isFront}
+                        />
                       </div>
 
                       {/* Middle: Big Value & Subtitle */}
@@ -260,12 +323,11 @@ export const CockpitView: React.FC = () => {
                           {metric.label}
                         </div>
                         <div className="flex items-baseline gap-1 mt-0.5">
-                          <span className="font-heading text-4xl font-extrabold tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]">
-                            {metric.id === 'heart-rate'
-                              ? liveJitter.hr
-                              : metric.id === 'spo2'
-                              ? liveJitter.spo2
-                              : metric.value}
+                          <span
+                            data-testid={`metric-${metric.id}`}
+                            className="font-heading text-4xl font-extrabold tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+                          >
+                            {sleeping ? '···' : (resolveMetric(metric.id).text ?? 'NO DATA')}
                           </span>
                           <span className="text-xs font-mono text-[#00CFFF]">{metric.unit}</span>
                         </div>
@@ -304,7 +366,15 @@ export const CockpitView: React.FC = () => {
                       {/* Bottom card info */}
                       <div className="pt-2 border-t border-white/10 flex justify-between items-center text-[10px] font-mono text-[#94b0d1]">
                         <span>REF: {metric.normalRange}</span>
-                        <span className="text-[#00CFFF]">NOMINAL</span>
+                        <span
+                          className={
+                            resolveMetric(metric.id).text === null
+                              ? 'text-gray-400'
+                              : 'text-[#00CFFF]'
+                          }
+                        >
+                          {sleeping ? '…' : metricStatusText(metric.id)}
+                        </span>
                       </div>
                     </GlassCard>
                   </div>
@@ -378,10 +448,16 @@ export const CockpitView: React.FC = () => {
                     <h3 className="font-heading font-bold text-base text-white tracking-wide">
                       {activeMetric.label}
                     </h3>
-                    <p className="text-[10px] font-mono text-[#94b0d1]">Télémétrie continue Apollo-7</p>
+                    <p className="text-[10px] font-mono text-[#94b0d1]">
+                      Télémétrie IRCO · {dashboard?.subject_id ?? '…'}
+                    </p>
                   </div>
                 </div>
-                <StatusPill label="STABLE" variant="nominal" showCheck />
+                <StatusPill
+                  label={sleeping ? '…' : metricStatusText(activeMetric.id)}
+                  variant={indicatorStatusVariant(activeMetric.id)}
+                  showCheck={!sleeping && indicatorStatusVariant(activeMetric.id) === 'nominal'}
+                />
               </div>
 
               {/* Value & 3D Heart Illustration Pulse */}
@@ -389,16 +465,36 @@ export const CockpitView: React.FC = () => {
                 <div>
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-heading text-4xl font-extrabold text-white tracking-tight">
-                      {activeMetric.id === 'heart-rate' ? liveJitter.hr : activeMetric.value}
+                      {sleeping ? '···' : (resolveMetric(activeMetric.id).text ?? 'NO DATA')}
                     </span>
                     <span className="text-sm font-mono text-[#00CFFF] font-semibold">
                       {activeMetric.unit}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 mt-1 text-xs font-mono text-[#22C55E]">
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>+2.4% vs dernière heure</span>
-                  </div>
+                  {(() => {
+                    const primary = (INDICATOR_IDS[activeMetric.id] ?? [])[0];
+                    const ind = primary ? indicatorMap.get(primary) : undefined;
+                    if (sleeping || !ind) {
+                      return (
+                        <div className="flex items-center gap-1.5 mt-1 text-xs font-mono text-gray-400">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>Qualité: …</span>
+                        </div>
+                      );
+                    }
+                    const tq = ind.measurement_quality || ind.quality;
+                    const colorCls =
+                      tq === 'valid' ? 'text-[#22C55E]' : tq === 'suspect' ? 'text-[#FF2D55]' : 'text-gray-400';
+                    return (
+                      <div className={`flex items-center gap-1.5 mt-1 text-xs font-mono ${colorCls}`}>
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        <span>
+                          Qualité: {tq || 'unknown'}
+                          {ind.last_updated ? ` · ${ind.last_updated.slice(11, 16)} UTC` : ''}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Pulsing Holographic Heart Icon / Asset */}
@@ -425,7 +521,7 @@ export const CockpitView: React.FC = () => {
               {/* Real-time Area Chart (Recharts) */}
               <div className="h-28 w-full py-1">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={activeMetric.history}>
+                  <AreaChart data={metricHistory(activeMetric.id)}>
                     <defs>
                       <linearGradient id="areaGlow" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#00CFFF" stopOpacity={0.4} />
@@ -468,15 +564,15 @@ export const CockpitView: React.FC = () => {
                   </div>
                 </div>
                 <div className="p-2 rounded-xl bg-white/5 border border-white/10 text-center">
-                  <div className="text-[9px] font-mono uppercase text-[#94b0d1]">Moyenne Mission</div>
+                  <div className="text-[9px] font-mono uppercase text-[#94b0d1]">Baseline (API)</div>
                   <div className="text-xs font-mono font-bold text-white mt-0.5">
-                    {activeMetric.missionAverage}
+                    {sleeping ? '…' : (metricBaseline(activeMetric.id) ?? 'NO DATA')}
                   </div>
                 </div>
                 <div className="p-2 rounded-xl bg-white/5 border border-white/10 text-center">
                   <div className="text-[9px] font-mono uppercase text-[#94b0d1]">Variabilité</div>
                   <div className="text-xs font-mono font-bold text-white mt-0.5">
-                    {activeMetric.variability}
+                    {sleeping ? '…' : (metricBaselineSd(activeMetric.id) ?? 'NO DATA')}
                   </div>
                 </div>
               </div>
@@ -531,67 +627,106 @@ export const CockpitView: React.FC = () => {
       {/* ─── Bottom KPI Dock (4 Cards) + Globe + Floating Astronaut ────────── */}
       <div className="relative z-20 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-center pt-2">
         
-        {/* KPI 1: Global Health Index (94%) */}
+        {/* KPI 1: Global vigilance level from GET /dashboard → global.level */}
         <GlassCard padding="sm" className="flex items-center gap-4">
-          <RingGauge value={liveJitter.ghi} max={100} size={58} strokeWidth={5} color="#22C55E" />
+          <div
+            data-testid="global-level-badge"
+            className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-mono font-bold"
+            style={{
+              borderColor:
+                level === 'green' ? '#22C55E' : level === 'amber' ? '#F59E0B' : level === 'red' ? '#FF2D55' : '#6b7280',
+              color:
+                level === 'green' ? '#22C55E' : level === 'amber' ? '#F59E0B' : level === 'red' ? '#FF2D55' : '#6b7280',
+              boxShadow: `0 0 14px ${
+                level === 'green' ? '#22C55E55' : level === 'amber' ? '#F59E0B55' : level === 'red' ? '#FF2D5555' : 'transparent'
+              }`,
+            }}
+          >
+            {sleeping ? '···' : level.toUpperCase()}
+          </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Indice Global Santé</div>
+            <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Vigilance Globale</div>
             <div className="font-heading text-lg font-bold text-white flex items-center gap-1.5">
-              <span>94%</span>
-              <span className="text-[10px] font-mono font-semibold text-[#22C55E] bg-[#22C55E]/15 px-1.5 rounded">
-                OPTIMAL
+              <span>{sleeping ? '···' : levelText}</span>
+              <span className="text-[10px] font-mono font-semibold text-[#A78BFA] bg-[#A78BFA]/15 px-1.5 rounded">
+                {dashboard?.global?.confidence ?? '…'}
               </span>
             </div>
-            <div className="w-full mt-1">
-              <Sparkline data={[91, 92, 93, 94, 93, 94, 95, 94]} color="#22C55E" width={110} height={18} />
+            <div className="w-full mt-1 text-[10px] font-mono text-[#94b0d1]">
+              {(dashboard?.global?.badges ?? []).join(' · ') || 'no badges'}
             </div>
           </div>
         </GlassCard>
 
-        {/* KPI 2: Oxygen Saturation (98%) */}
+        {/* KPI 2: SpO₂ — real value or NO DATA */}
         <GlassCard padding="sm" className="flex items-center gap-4">
-          <RingGauge value={liveJitter.spo2} max={100} size={58} strokeWidth={5} color="#00CFFF" />
+          <RingGauge
+            value={spo2Metric.text ? Number(spo2Metric.text) : 0}
+            max={100}
+            size={58}
+            strokeWidth={5}
+            color={spo2Metric.text ? '#00CFFF' : '#6b7280'}
+          />
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Saturation O₂ (SpO₂)</div>
             <div className="font-heading text-lg font-bold text-white flex items-center gap-1.5">
-              <CountUp end={98} suffix="%" />
-              <span className="text-[10px] font-mono font-semibold text-[#00CFFF] bg-[#00CFFF]/15 px-1.5 rounded">
-                STABLE
+              <span data-testid="kpi-spo2">{sleeping ? '···' : (spo2Metric.text ?? 'NO DATA')}</span>
+              <span className="text-[10px] font-mono font-semibold text-gray-400 bg-white/5 px-1.5 rounded">
+                {spo2Metric.text ? 'MEASURED' : 'NO DATA'}
               </span>
             </div>
             <div className="w-full mt-1">
-              <Sparkline data={[98, 97, 98, 99, 98, 98, 98, 98]} color="#00CFFF" width={110} height={18} />
+              <Sparkline data={metricHistory('spo2').map((h) => h.value)} color={spo2Metric.text ? '#00CFFF' : '#6b7280'} width={110} height={18} />
             </div>
           </div>
         </GlassCard>
 
-        {/* KPI 3: Body Temperature (36.6 °C) */}
+        {/* KPI 3: Body temperature — real value or NO DATA */}
         <GlassCard padding="sm" className="flex items-center gap-4">
-          <RingGauge value={36.6} max={40} size={58} strokeWidth={5} color="#F59E0B" unit="°C" />
+          <RingGauge
+            value={tempMetric.text ? Number(tempMetric.text) : 0}
+            max={40}
+            size={58}
+            strokeWidth={5}
+            color={tempMetric.text ? '#F59E0B' : '#6b7280'}
+            unit="°C"
+          />
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Température Corporelle</div>
             <div className="font-heading text-lg font-bold text-white flex items-center gap-1.5">
-              <span>{liveJitter.temp} °C</span>
-              <span className="text-[10px] font-mono font-semibold text-[#F59E0B] bg-[#F59E0B]/15 px-1.5 rounded">
-                NORMALE
+              <span data-testid="kpi-temp">{sleeping ? '···' : (tempMetric.text ?? 'NO DATA')}</span>
+              <span className="text-[10px] font-mono font-semibold text-gray-400 bg-white/5 px-1.5 rounded">
+                {tempMetric.text ? '°C' : 'NO DATA'}
               </span>
             </div>
             <div className="w-full mt-1">
-              <Sparkline data={[36.5, 36.6, 36.7, 36.6, 36.6, 36.6]} color="#F59E0B" width={110} height={18} />
+              <Sparkline data={metricHistory('body-temp').map((h) => h.value)} color={tempMetric.text ? '#F59E0B' : '#6b7280'} width={110} height={18} />
             </div>
           </div>
         </GlassCard>
 
-        {/* KPI 4: Mission Status & Astronaut Float */}
+        {/* KPI 4: Mission status from the API (mission_id / environment / alerts) */}
         <GlassCard padding="sm" className="relative flex items-center justify-between overflow-hidden">
           <div className="z-10">
             <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Statut Mission</div>
             <div className="flex items-center gap-1.5 text-sm font-heading font-bold text-[#22C55E] mt-0.5">
               <CheckCircle2 className="w-4 h-4" />
-              <span>Systèmes Nominaux</span>
+              <span>
+                {sleeping
+                  ? '···'
+                  : level === 'green'
+                  ? 'Systèmes Nominaux'
+                  : level === 'amber'
+                  ? 'Vigilance Requise'
+                  : level === 'red'
+                  ? 'État Critique'
+                  : 'Sans Données'}
+              </span>
             </div>
-            <div className="text-[10px] font-mono text-[#00CFFF] mt-1">
-              Apollo-7 · Équipage 4
+            <div className="text-[10px] font-mono text-[#00CFFF] mt-1" data-testid="mission-id">
+              {sleeping
+                ? '···'
+                : `${dashboard?.mission?.mission_id ?? '—'} · ${dashboard?.mission?.environment ?? '—'}`}
             </div>
           </div>
 
@@ -653,7 +788,11 @@ export const CockpitView: React.FC = () => {
             </div>
 
             <div className="flex justify-between items-center text-xs font-mono text-gray-400 border-t border-white/10 pt-4">
-              <span>Données synchronisées avec la station au sol (42 ms)</span>
+              <span>
+                {dashboard?.last_updated
+                  ? `Dernière mise à jour API: ${dashboard.last_updated.slice(11, 16)} UTC`
+                  : 'Synchronisation IRCO en cours'}
+              </span>
               <button
                 onClick={() => setIsHistoryModalOpen(false)}
                 className="px-4 py-2 rounded-xl bg-[#00CFFF] text-[#020B18] font-bold hover:bg-[#00CFFF]/90"

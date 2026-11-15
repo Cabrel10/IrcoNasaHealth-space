@@ -23,7 +23,13 @@ import {
 } from 'recharts';
 
 import { useMissionStore } from '@/stores/useMissionStore';
-import { CREW_MEMBERS, VITALS_CARDS, type CrewMember, type VitalCard } from '@/constants/metrics';
+import { VITALS_CARDS, type CrewMember } from '@/constants/metrics';
+import {
+  buildIndicatorMap,
+  metricValueText,
+  metricHistory,
+  globalLevelView,
+} from '@/services/dashboardValues';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { RingGauge } from '@/components/ui/RingGauge';
@@ -31,8 +37,40 @@ import { Sparkline } from '@/components/ui/Sparkline';
 import { useReducedMotion } from '@/hooks/useChrono';
 
 export const CrewHealthView: React.FC = () => {
-  const { selectedCrewId, setSelectedCrew, setSelectedMetric, setActiveNav } = useMissionStore();
+  const { selectedCrewId, setSelectedCrew, setSelectedMetric, setActiveNav, dashboard, dashboardStatus } =
+    useMissionStore();
   const reducedMotion = useReducedMotion();
+
+  // ─── Real backend resolution (values come from the IRCO API only) ─────────
+  const indicatorMap = buildIndicatorMap(dashboard?.indicators);
+  const sleeping = dashboardStatus === 'loading';
+  const level = dashboard?.global?.level ?? 'no_data';
+  const { text: levelText, variant: levelVariant } = globalLevelView(dashboard?.global?.level);
+  const levelColor =
+    level === 'green' ? '#22C55E' : level === 'amber' ? '#F59E0B' : level === 'red' ? '#FF2D55' : '#6b7280';
+  const fmt = (v: number | null | undefined) => (v === null || v === undefined ? null : String(Number(v)));
+  const indValue = (id: string) => fmt(indicatorMap.get(id)?.value ?? null);
+
+  const subject: CrewMember = {
+    id: 'a01',
+    name: `Sujet ${dashboard?.subject_id ?? '—'}`,
+    role: 'Sujet principal · démo mono-sujet',
+    status: level === 'red' ? 'monitoring' : 'healthy',
+    statusColor: levelColor,
+    initials: 'A1',
+  };
+  const crewRoster: CrewMember[] = [subject];
+  const currentCrew: CrewMember = crewRoster.find((m) => m.id === selectedCrewId) ?? subject;
+
+  const heartText = metricValueText(indicatorMap, 'heart-rate');
+  const envValue = (id: string, max: number) => {
+    const v = indicatorMap.get(id)?.value;
+    return v === null || v === undefined ? null : Number(v);
+  };
+  const radiation = envValue('radiation_dose_daily', 30);
+  const co2 = envValue('co2_cabin', 5000);
+  const stress = envValue('stress_score', 100);
+  const missionDay = dashboard?.mission?.mission_day ?? null;
 
   const [activeZone, setActiveZone] = useState<'cardiac' | 'cranial' | 'pulmonary' | null>(null);
   const [bodyFlash, setBodyFlash] = useState(false);
@@ -66,7 +104,7 @@ export const CrewHealthView: React.FC = () => {
   };
 
   // Selected crew member object
-  const currentCrew = CREW_MEMBERS.find((m) => m.id === selectedCrewId) || CREW_MEMBERS[0];
+  // (currentCrew derived above from the single API subject)
 
   // Muscle & Bone Loss Chart Data
   const muscleBoneData = [
@@ -118,13 +156,13 @@ export const CrewHealthView: React.FC = () => {
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-[#00CFFF]/20">
                 <span className="font-heading font-bold text-sm tracking-wider uppercase text-white">
-                  Équipage Apollo-7
+                  Sujet {dashboard?.subject_id ?? '—'}
                 </span>
-                <span className="text-xs font-mono text-[#00CFFF]">4 Membres</span>
+                <span className="text-xs font-mono text-[#00CFFF]">1 Sujet · démo</span>
               </div>
 
               <div className="flex flex-col gap-2.5 mt-3">
-                {CREW_MEMBERS.map((member) => {
+                {crewRoster.map((member) => {
                   const isSelected = member.id === selectedCrewId;
 
                   return (
@@ -171,11 +209,13 @@ export const CrewHealthView: React.FC = () => {
               </div>
             </div>
 
-            {/* Selected Member Quick Bio Info */}
+            {/* Selected Subject Quick Bio Info (from the API) */}
             <div className="p-3 rounded-xl bg-white/5 border border-[#00CFFF]/20 text-[11px] font-mono space-y-1">
               <div className="text-[#00CFFF] font-bold">SUJET: {currentCrew.name}</div>
-              <div className="text-gray-300">Statut: Bio-télémétrie connectée</div>
-              <div className="text-gray-400">Mission Day: MET 137</div>
+              <div className="text-gray-300">
+                Vigilance: {sleeping ? '…' : levelText} · {dashboard?.data_class?.toUpperCase() ?? '…'}
+              </div>
+              <div className="text-gray-400">Mission Day: {missionDay ?? '—'}</div>
             </div>
           </GlassCard>
         </div>
@@ -304,10 +344,13 @@ export const CrewHealthView: React.FC = () => {
                   <Heart className="w-3.5 h-3.5 animate-pulse" />
                   <span>ACTIVITÉ CARDIAQUE</span>
                 </div>
-                <div className="text-base font-heading font-extrabold text-white mt-0.5">
-                  68 <span className="text-[10px] font-mono text-gray-400">BPM</span>
+                <div className="text-base font-heading font-extrabold text-white mt-0.5" data-testid="callout-heart">
+                  {sleeping ? '···' : (heartText ?? 'NO DATA')}{' '}
+                  {heartText ? <span className="text-[10px] font-mono text-gray-400">BPM</span> : null}
                 </div>
-                <div className="text-[9px] font-mono text-[#22C55E]">Rythme sinusal régulier</div>
+                <div className="text-[9px] font-mono" style={{ color: levelColor }}>
+                  {sleeping ? '…' : `Vigilance: ${levelText}`}
+                </div>
               </GlassCard>
 
               {/* SVG Connector line to chest */}
@@ -328,10 +371,12 @@ export const CrewHealthView: React.FC = () => {
                   <Shield className="w-3.5 h-3.5" />
                   <span>ÉTAT PHYSIOLOGIQUE</span>
                 </div>
-                <div className="text-sm font-heading font-bold text-[#22C55E] mt-0.5">
-                  STABLE (98.4%)
+                <div className="text-sm font-heading font-bold mt-0.5" style={{ color: levelColor }}>
+                  {sleeping ? '···' : levelText}
                 </div>
-                <div className="text-[9px] font-mono text-gray-400">Aucune anomalie critique</div>
+                <div className="text-[9px] font-mono text-gray-400">
+                  {(dashboard?.active_alerts ?? []).length} alerte(s) active(s)
+                </div>
               </GlassCard>
 
               {/* SVG Connector line to body */}
@@ -370,16 +415,18 @@ export const CrewHealthView: React.FC = () => {
                         {card.label}
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className="font-heading text-base font-extrabold text-white">
-                          {card.value}
+                        <span className="font-heading text-base font-extrabold text-white" data-testid={`vital-${card.id}`}>
+                          {sleeping ? '···' : (metricValueText(indicatorMap, card.id) ?? 'NO DATA')}
                         </span>
-                        <span className="text-[10px] font-mono text-gray-400">{card.unit}</span>
+                        <span className="text-[10px] font-mono text-gray-400">
+                          {sleeping ? '' : (metricValueText(indicatorMap, card.id) ? card.unit : '')}
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Sparkline data={card.history} color={card.color} width={65} height={20} />
+                    <Sparkline data={metricHistory(indicatorMap, card.id).map((h) => h.value)} color={card.color} width={65} height={20} />
                     <ChevronRight className="w-3.5 h-3.5 text-[#00CFFF] opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>
@@ -394,16 +441,26 @@ export const CrewHealthView: React.FC = () => {
         
         {/* 1. Radiation Gauge (Semicircle 12.4 / 30 mSv) */}
         <GlassCard padding="sm" className="flex flex-col items-center justify-center text-center">
-          <RingGauge value={12.4} max={30} size={70} strokeWidth={6} color="#F59E0B" semi unit="mSv" />
+          <RingGauge
+            value={radiation ?? 0}
+            max={30}
+            size={70}
+            strokeWidth={6}
+            color={radiation === null ? '#6b7280' : '#F59E0B'}
+            semi
+            unit="mSv"
+          />
           <div className="text-[10px] font-mono text-[#94b0d1] uppercase mt-1">Dose Radiation</div>
-          <div className="text-[9px] font-mono text-[#22C55E]">12.4 / 30 mSv (Seuil sûr)</div>
+          <div className="text-[9px] font-mono" style={{ color: radiation === null ? '#9ca3af' : '#22C55E' }}>
+            {sleeping ? '···' : radiation === null ? 'NO DATA / 30 mSv' : `${radiation} / 30 mSv`}
+          </div>
         </GlassCard>
 
         {/* 2. Muscle & Bone Loss Chart (Recharts) */}
         <GlassCard padding="sm" className="flex flex-col justify-between">
           <div className="flex items-center justify-between text-[10px] font-mono text-[#94b0d1]">
             <span>Densité Musculaire/Osseuse</span>
-            <span className="text-[#A78BFA] font-bold">-4.5%</span>
+            <span className="text-[#A78BFA] font-bold">PROJECTION</span>
           </div>
           <div className="h-14 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -425,46 +482,71 @@ export const CrewHealthView: React.FC = () => {
           <div className="flex justify-between text-[9px] font-mono text-gray-400">
             <span className="text-[#A78BFA]">■ Muscle</span>
             <span className="text-[#00CFFF]">■ Os</span>
+            <span className="text-gray-500">illustratif</span>
           </div>
         </GlassCard>
 
-        {/* 3. Hydration Ring (78%) */}
+        {/* 3. CO₂ Cabin (real indicator or NO DATA) */}
         <GlassCard padding="sm" className="flex flex-col items-center justify-center">
-          <RingGauge value={78} max={100} size={60} strokeWidth={5} color="#00CFFF" label="Hydratation" />
-          <div className="text-[9px] font-mono text-[#22C55E] mt-0.5">Équilibre optimal</div>
+          <RingGauge
+            value={co2 ?? 0}
+            max={5000}
+            size={60}
+            strokeWidth={5}
+            color={co2 === null ? '#6b7280' : '#00CFFF'}
+            label="CO₂ Cabine"
+            unit="ppm"
+          />
+          <div className="text-[9px] font-mono mt-0.5" style={{ color: co2 === null ? '#9ca3af' : '#22C55E' }}>
+            {sleeping ? '···' : co2 === null ? 'NO DATA' : `${co2} ppm (seuil 5000)`}
+          </div>
         </GlassCard>
 
-        {/* 4. Stress Ring (22 / 100) */}
+        {/* 4. Stress (real indicator or NO DATA) */}
         <GlassCard padding="sm" className="flex flex-col items-center justify-center">
-          <RingGauge value={22} max={100} size={60} strokeWidth={5} color="#F59E0B" label="Niveau Stress" unit="/100" />
-          <div className="text-[9px] font-mono text-[#22C55E] mt-0.5">Faible · Nominal</div>
+          <RingGauge
+            value={stress ?? 0}
+            max={100}
+            size={60}
+            strokeWidth={5}
+            color={stress === null ? '#6b7280' : '#F59E0B'}
+            label="Niveau Stress"
+            unit="/100"
+          />
+          <div className="text-[9px] font-mono mt-0.5" style={{ color: stress === null ? '#9ca3af' : '#22C55E' }}>
+            {sleeping ? '···' : stress === null ? 'NO DATA' : `Score ${stress}/100`}
+          </div>
         </GlassCard>
 
-        {/* 5. Mission Timeline (D+137 to D+142) */}
+        {/* 5. Mission Timeline (real mission_day from the API) */}
         <GlassCard padding="sm" className="col-span-2 md:col-span-1 flex flex-col justify-between">
           <div className="flex items-center justify-between text-[10px] font-mono text-[#94b0d1]">
             <span>Timeline Mission</span>
-            <span className="text-[#00CFFF] font-bold">D+137</span>
+            <span className="text-[#00CFFF] font-bold">D+{missionDay ?? '—'}</span>
           </div>
 
           <div className="relative flex items-center justify-between my-2 px-1">
             <div className="absolute inset-x-2 h-0.5 bg-white/10" />
-            {[137, 138, 139, 140, 141, 142].map((day, idx) => (
-              <div key={day} className="relative z-10 flex flex-col items-center">
-                <div
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    idx === 0
-                      ? 'bg-[#00CFFF] ring-4 ring-[#00CFFF]/30 shadow-[0_0_8px_#00CFFF]'
-                      : 'bg-white/20'
-                  }`}
-                />
-                <span className="text-[9px] font-mono text-gray-400 mt-1">D{day}</span>
-              </div>
-            ))}
+            {[0, 1, 2, 3, 4, 5].map((offset) => {
+              const day = (missionDay ?? 1) + offset;
+              const isCurrent = offset === 0;
+              return (
+                <div key={offset} className="relative z-10 flex flex-col items-center">
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      isCurrent
+                        ? 'bg-[#00CFFF] ring-4 ring-[#00CFFF]/30 shadow-[0_0_8px_#00CFFF]'
+                        : 'bg-white/20'
+                    }`}
+                  />
+                  <span className="text-[9px] font-mono text-gray-400 mt-1">D{day}</span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="text-[9px] font-mono text-center text-[#22C55E]">
-            Prochaine rotation EVA: D+139
+            {dashboard?.mission?.mode === 'autonomous' ? 'Mode autonome · démo a01' : '—'}
           </div>
         </GlassCard>
       </div>

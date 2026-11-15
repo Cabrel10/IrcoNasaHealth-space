@@ -192,3 +192,33 @@ La tâche #5 précédente (Support Frontend Claude) était **invalide** :
 **Agent :** Support Frontend (Claude) · **Tâche :** #5-FIX Brancher UI sur API + tests stricts
 Je reprends la tâche #5 : supprimer données codées en dur, brancher `api.ts`, vérifier appels réseau réels, tests stricts (heart_rate=62, global.level, no_data≠0). Portée : diagnostic + plan d'action.
 
+
+### 2026-11-15 20:40 — Début (#5-FIX, repris par l'agent backend)
+**Agent :** GLM (agent backend, session IRCO) · **Tâche :** #5-FIX brancher l'UI React sur l'API réelle
+Le soutien a de nouveau produit un document de prose (annulé) et répété l'erreur
+factuelle « pas de global.level » — la preuve live du 20:10 tient : le backend
+renvoie `global.level` (green/amber/red) et PAS de champ racine `vigilance`.
+Je code la tâche moi-même : écrans branchés sur `api.ts` (dashboard
+`mode=demo&scenario=a01&day=N`), heart_rate=62 au jour 1, badge `global.level`,
+`no_data` jamais rendu comme 0, IRCO-DEMO à la place d'Apollo-7, tests e2e
+stricts avec preuve d'appels réseau. Portée : `src/`, `tests/e2e/`.
+
+### 2026-11-15 21:15 — Fin (#5-FIX)
+**Agent :** GLM (agent backend, session IRCO, intervention d'urgence validée par le propriétaire) · **Tâche :** #5-FIX
+Tâche terminée. Fichiers : `src/stores/useMissionStore.ts` (dashboard + deep-link
+`?day=N`), `src/services/api.ts` (types mission/alerts/last_updated alignés sur
+le contrat réel), `src/services/dashboardValues.ts` (nouveau : résolution
+partagée, no_data jamais rendu comme 0), `src/components/views/CockpitView.tsx`
+(valeurs API, badge `global.level`, sélecteur de jour, jitter faux supprimé),
+`src/components/views/CrewHealthView.tsx` (sujet unique A-01, valeurs réelles,
+radiation/CO₂/stress depuis l'API, projection muscle/os marquée ILLUSTRATIF),
+`src/components/layout/TopBar.tsx` (IRCO-DEMO, alertes réelles), `src/components/
+layout/DashboardShell.tsx` (chargement au mount + changement de jour),
+`src/constants/metrics.ts` (neuro→sleep-quality, INDICATOR_IDS), `vite.config.ts`
+(proxy 3080→3081), `tests/e2e/app-real-data.spec.ts` (nouveau).
+Preuves : `npx tsc --noEmit` → 0 erreur ; `npm run build` → OK ;
+`npx playwright test app-real-data` → **7 passed (1.3m)** au premier run ;
+`npx playwright test api-integration` → **16 passed (8.0s)**. Les données
+codées en dur (68 bpm, Apollo-7, Stafford, MEASURED_REAL, GHI 94%) sont supprimées
+des deux vues. Reste connu : chunk 743 kB (tâche #7), `npm run lint` cassé
+(ESLint 9 sans config, préexistant), mannequin 3D à intégrer (ressource commitée).

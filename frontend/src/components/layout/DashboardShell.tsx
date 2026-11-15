@@ -9,10 +9,15 @@ import { CrewHealthView } from '@/components/views/CrewHealthView';
 import { useMissionStore } from '@/stores/useMissionStore';
 
 export const DashboardShell: React.FC = () => {
-  const { activeNavId, introDone } = useMissionStore();
+  const { activeNavId, introDone, dashboardDay, loadDashboard } = useMissionStore();
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   const isCrewView = activeNavId === 'crew-health';
+
+  // Fetch the real dashboard from the IRCO backend on load and on day change.
+  useEffect(() => {
+    void loadDashboard();
+  }, [dashboardDay, loadDashboard]);
 
   useEffect(() => {
     setIsTransitioning(true);

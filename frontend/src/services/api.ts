@@ -39,6 +39,26 @@ export interface DashboardGlobal {
   badges: string[];
 }
 
+export interface DashboardMission {
+  mission_id: string;
+  mission_day: number;
+  duration_days?: number;
+  environment: string;
+  mode?: string;
+  simulated?: boolean;
+  earth_delay_min?: number;
+}
+
+export interface DashboardAlert {
+  id: string;
+  state: string;
+  vigilance?: string;
+  persistence: string;
+  triggered_rules?: string[];
+  actions?: string[];
+  data_class?: string;
+}
+
 export interface DashboardResponse {
   mode: string;
   subject_id: string;
@@ -47,8 +67,10 @@ export interface DashboardResponse {
   indicators: DashboardIndicator[];
   data_quality: { data_class: string; valid: number; suspect: number; no_data: number };
   services: { engine: string; ai: string; knowledge: string };
+  mission?: DashboardMission;
+  last_updated?: string;
   medical_notice?: string;
-  active_alerts?: Array<{ state: string; persistence: string }>;
+  active_alerts?: DashboardAlert[];
 }
 
 export interface MissionInfo {

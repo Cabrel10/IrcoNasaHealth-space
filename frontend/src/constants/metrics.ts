@@ -57,12 +57,30 @@ export const CYLINDER_METRICS: CylinderMetric[] = [
     history: genHistory(16, 3, 20),
   },
   {
-    id: 'neuro', label: 'Neuro Score', subtitle: 'Neurological',
-    value: '94', unit: '%', status: 'normal', color: '#818CF8', iconName: 'Brain',
-    normalRange: '85 - 100%', missionAverage: '93%', variability: '±2%',
+    id: 'sleep-quality', label: 'Sleep Quality', subtitle: 'Sleep',
+    value: '94', unit: '/100', status: 'normal', color: '#818CF8', iconName: 'Moon',
+    normalRange: '60 - 100', missionAverage: '88', variability: '±5',
     history: genHistory(94, 4, 20),
   },
 ];
+
+/**
+ * Mapping UI metric id → backend indicator ids (GET /api/v1/indicators registry).
+ * Values displayed in the UI MUST come from these indicators — never invented.
+ */
+export const INDICATOR_IDS: Record<string, string[]> = {
+  'heart-rate': ['heart_rate'],
+  'spo2': ['spo2'],
+  'blood-pressure': ['blood_pressure_systolic', 'blood_pressure_diastolic'],
+  'body-temp': ['body_temperature'],
+  'respiratory-rate': ['respiratory_rate'],
+  'sleep-quality': ['sleep_quality'],
+  'core-temp': ['body_temperature'],
+};
+
+export const VITAL_INDICATOR_IDS: Record<string, string[]> = {
+  ...INDICATOR_IDS,
+};
 
 export interface CrewMember {
   id: string;
