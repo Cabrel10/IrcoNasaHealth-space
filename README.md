@@ -56,8 +56,8 @@ source data.
 - **Temporal health state** — per-subject health overview with freshness
   evaluation, `as_of` deterministic replay, and missing-indicator reporting.
 - **Knowledge & assistant** — curated NASA/CSA summary corpus, offline BM25
-  search, and an extractive, citation-preserving assistant fallback
-  (no LLM required).
+  search, an optional OpenAI-compatible Colab chat relay with citation checks,
+  and an extractive fallback (no LLM required).
 - **Offline demo** — replayable synthetic scenarios (A-01, nominal,
   dropout) with explicit synthetic labels.
 
@@ -110,6 +110,12 @@ curl http://localhost:3080/health
 | `IRCO_HOST` / `IRCO_PORT` | Bind address and port (default `3080`) |
 | `IRCO_API_TOKEN` | Enables bearer authentication on every route except `/health`, `/version`, and `/openapi.json` |
 | `IRCO_CORPUS_PATH` | Overrides the default knowledge corpus location (`data/corpus.jsonl`) |
+| `COLAB_AICHAT_CONFIG` | Optional path to the live aichat config updated by the Colab heartbeat |
+
+The assistant rereads the Colab config per request, uses only relevant
+scientific sources, and falls back locally when Colab is unavailable. The
+current VPS notebook supports text chat only; multimodal endpoints are not
+enabled. See [`colab/README.md`](colab/README.md).
 
 ## API Endpoints
 
@@ -156,6 +162,7 @@ nase/
 ├── config/             # Server, sources & indicator registry
 ├── rules/              # Decision rules (JSON)
 ├── data/               # Raw data, normalized data, manifests
+├── colab/              # Optional Colab runtime integration
 ├── docs/               # Architecture, API & scientific validation docs
 └── tests/              # Integration tests & fixtures
 ```
@@ -209,8 +216,9 @@ temporal health-state API, and offline BM25 search with a
 citation-preserving assistant fallback.
 
 Not yet delivered: analog-data import, composite alert persistence during
-ingestion, an automated source-refresh pipeline, archived source pages,
-and operational AI/Colab services (intentionally optional).
+ingestion, an automated source-refresh pipeline, archived source pages, and
+audio/vision adapters. The Colab chat relay remains optional and requires a
+running notebook heartbeat.
 
 All clinical thresholds are illustrative/provisional; trend analysis is
 descriptive until rules receive scientific validation. See
@@ -225,6 +233,7 @@ descriptive until rules receive scientific validation. See
 | [`docs/PROGRESS.md`](docs/PROGRESS.md) | Detailed implementation status |
 | [`docs/architecture/`](docs/architecture/README.md) | Architecture notes |
 | [`docs/data_sources/`](docs/data_sources/README.md) | External data sources |
+| [`colab/README.md`](colab/README.md) | Dynamic Colab endpoint and assistant fallback |
 | [`docs/scientific_validation/`](docs/scientific_validation/README.md) | Validation approach |
 
 ## License

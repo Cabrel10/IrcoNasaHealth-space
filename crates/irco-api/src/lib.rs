@@ -155,6 +155,17 @@ struct ErrorEnvelope {
     hint: String,
 }
 
+struct ApiError {
+    status: StatusCode,
+    body: ErrorEnvelope,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.status, Json(self.body)).into_response()
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: &'static str,
@@ -423,7 +434,8 @@ async fn authenticate(
                 "unauthorized",
                 "A valid bearer token is required",
                 "Set Authorization: Bearer <token> or configure IRCO_API_TOKEN.",
-            );
+            )
+            .into_response();
         }
     }
     next.run(request).await
@@ -469,7 +481,7 @@ async fn openapi_json() -> Json<Value> {
     )
 }
 
-async fn rules(State(state): State<AppState>) -> Result<Json<RulesDocument>, Response> {
+async fn rules(State(state): State<AppState>) -> Result<Json<RulesDocument>, ApiError> {
     state.rules_snapshot().map(Json).map_err(|error| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -482,7 +494,7 @@ async fn rules(State(state): State<AppState>) -> Result<Json<RulesDocument>, Res
 
 async fn reload_rules(
     State(state): State<AppState>,
-) -> Result<Json<RulesReloadResponse>, Response> {
+) -> Result<Json<RulesReloadResponse>, ApiError> {
     let rules = state.reload_rules().map_err(|error| {
         api_error(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -497,7 +509,7 @@ async fn reload_rules(
     }))
 }
 
-async fn indicators(State(state): State<AppState>) -> Result<Json<Vec<IndicatorEntry>>, Response> {
+async fn indicators(State(state): State<AppState>) -> Result<Json<Vec<IndicatorEntry>>, ApiError> {
     state
         .indicators
         .as_ref()
@@ -516,7 +528,7 @@ async fn indicators(State(state): State<AppState>) -> Result<Json<Vec<IndicatorE
 async fn indicator(
     State(state): State<AppState>,
     Path(indicator_id): Path<String>,
-) -> Result<Json<IndicatorEntry>, Response> {
+) -> Result<Json<IndicatorEntry>, ApiError> {
     let Some(registry) = state.indicators.as_ref().as_ref() else {
         return Err(api_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -544,7 +556,7 @@ async fn indicator(
 async fn observations(
     State(state): State<AppState>,
     query: Result<Query<ObservationQuery>, QueryRejection>,
-) -> Result<Json<ObservationPage>, Response> {
+) -> Result<Json<ObservationPage>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -605,7 +617,7 @@ async fn health_state(
     State(state): State<AppState>,
     Path(subject_id): Path<String>,
     query: Result<Query<StateQuery>, QueryRejection>,
-) -> Result<Json<HealthStateResponse>, Response> {
+) -> Result<Json<HealthStateResponse>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -891,7 +903,7 @@ async fn health_state(
 async fn health_overview(
     State(state): State<AppState>,
     query: Result<Query<StateQuery>, QueryRejection>,
-) -> Result<Json<HealthOverviewResponse>, Response> {
+) -> Result<Json<HealthOverviewResponse>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -979,7 +991,7 @@ async fn health_overview(
 async fn export(
     State(state): State<AppState>,
     query: Result<Query<ExportQuery>, QueryRejection>,
-) -> Result<Response, Response> {
+) -> Result<Response, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1054,7 +1066,7 @@ async fn export(
 async fn ingest(
     State(state): State<AppState>,
     request: Result<Json<IngestRequest>, JsonRejection>,
-) -> Result<(StatusCode, Json<IngestResponse>), Response> {
+) -> Result<(StatusCode, Json<IngestResponse>), ApiError> {
     let Json(request) = request.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1397,7 +1409,7 @@ fn rule_status_name(status: &RuleStatus) -> &'static str {
 async fn alerts(
     State(state): State<AppState>,
     query: Result<Query<AlertsQuery>, QueryRejection>,
-) -> Result<Json<AlertPage>, Response> {
+) -> Result<Json<AlertPage>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1436,7 +1448,7 @@ async fn transition(
     State(state): State<AppState>,
     Path(alert_id): Path<String>,
     request: Result<Json<AlertTransitionRequest>, JsonRejection>,
-) -> Result<Json<Alert>, Response> {
+) -> Result<Json<Alert>, ApiError> {
     let Json(request) = request.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1474,7 +1486,7 @@ async fn record_followup(
     State(state): State<AppState>,
     Path(alert_id): Path<String>,
     request: Result<Json<AlertFollowupRequest>, JsonRejection>,
-) -> Result<Json<AlertFollowupResponse>, Response> {
+) -> Result<Json<AlertFollowupResponse>, ApiError> {
     let Json(request) = request.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1569,7 +1581,7 @@ async fn demo_scenarios() -> Json<Vec<DemoScenarioSummary>> {
 async fn demo_replay(
     State(state): State<AppState>,
     query: Result<Query<DemoQuery>, QueryRejection>,
-) -> Result<Json<demo::EvaluatedDemoReplay>, Response> {
+) -> Result<Json<demo::EvaluatedDemoReplay>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1615,7 +1627,7 @@ async fn demo_replay(
 async fn demo_reset(
     State(state): State<AppState>,
     query: Result<Query<DemoQuery>, QueryRejection>,
-) -> Result<Json<demo::EvaluatedDemoReplay>, Response> {
+) -> Result<Json<demo::EvaluatedDemoReplay>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1660,7 +1672,7 @@ async fn demo_reset(
 async fn search(
     State(state): State<AppState>,
     query: Result<Query<SearchQuery>, QueryRejection>,
-) -> Result<Json<SearchResponse>, Response> {
+) -> Result<Json<SearchResponse>, ApiError> {
     let Query(query) = query.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1712,7 +1724,7 @@ async fn search(
 async fn assistant(
     State(state): State<AppState>,
     request: Result<Json<AssistantRequest>, JsonRejection>,
-) -> Result<Json<irco_ai::AssistantAnswer>, Response> {
+) -> Result<Json<irco_ai::AssistantAnswer>, ApiError> {
     let Json(request) = request.map_err(|error| {
         api_error(
             StatusCode::BAD_REQUEST,
@@ -1740,10 +1752,15 @@ async fn assistant(
                     hazard: request.hazard.as_deref(),
                     indicator: request.indicator.as_deref(),
                 },
-                3,
+                5,
             )
         });
-    Ok(Json(compose_answer(&hits)))
+    let hits = irco_ai::relevant_hits(&hits);
+    let answer = match irco_ai::answer_with_colab(&request.question, &hits).await {
+        Some(answer) => answer,
+        None => compose_answer(&hits),
+    };
+    Ok(Json(answer))
 }
 
 async fn knowledge_health(State(state): State<AppState>) -> Json<Value> {
@@ -1758,7 +1775,7 @@ async fn knowledge_health(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-async fn knowledge_hazards(State(state): State<AppState>) -> Result<Json<Value>, Response> {
+async fn knowledge_hazards(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
     if state.knowledge.is_none() {
         return Err(api_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1781,7 +1798,7 @@ async fn knowledge_hazards(State(state): State<AppState>) -> Result<Json<Value>,
 async fn knowledge_indicator(
     State(state): State<AppState>,
     Path(indicator_id): Path<String>,
-) -> Result<Json<SearchResponse>, Response> {
+) -> Result<Json<SearchResponse>, ApiError> {
     let Some(knowledge) = state.knowledge.as_ref() else {
         return Err(api_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1805,16 +1822,15 @@ async fn knowledge_indicator(
     }))
 }
 
-fn api_error(status: StatusCode, code: &str, error: &str, hint: &str) -> Response {
-    (
+fn api_error(status: StatusCode, code: &str, error: &str, hint: &str) -> ApiError {
+    ApiError {
         status,
-        Json(ErrorEnvelope {
+        body: ErrorEnvelope {
             error: error.to_owned(),
             code: code.to_owned(),
             hint: hint.to_owned(),
-        }),
-    )
-        .into_response()
+        },
+    }
 }
 
 #[cfg(test)]
