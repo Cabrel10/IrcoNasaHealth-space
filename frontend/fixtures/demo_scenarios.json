@@ -1,0 +1,20 @@
+[
+  {
+    "id": "a01",
+    "data_class": "synthetic",
+    "days": 124,
+    "description": "Progressive synthetic physiological drift; day 124 ends at the specified values."
+  },
+  {
+    "id": "nominal",
+    "data_class": "synthetic",
+    "days": 124,
+    "description": "Stable synthetic observations for nominal-path integration testing."
+  },
+  {
+    "id": "dropout",
+    "data_class": "synthetic",
+    "days": 124,
+    "description": "Stable synthetic data with explicitly missing sensor observations."
+  }
+]

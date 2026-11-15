@@ -1,0 +1,11 @@
+{
+  "crew_size": 1,
+  "duration_days": 124,
+  "earth_delay_min": 12,
+  "environment": "deep_space",
+  "mission_id": "IRCO-DEMO",
+  "name": "Integrated Risk and Countermeasure Observatory Demo Mission",
+  "simulated": true,
+  "start_date": "2026-01-01T00:00:00Z",
+  "subject_id": "A-01"
+}

@@ -1,0 +1,9 @@
+{
+  "hazards": [
+    "radiation",
+    "isolation",
+    "hostile_environment",
+    "distance_from_earth",
+    "altered_gravity"
+  ]
+}

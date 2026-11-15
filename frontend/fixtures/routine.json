@@ -1,0 +1,44 @@
+{
+  "date": "2026-11-15",
+  "progress": {
+    "completed": 0,
+    "percentage": 0,
+    "total": 4
+  },
+  "subject_id": "A-01",
+  "tasks": [
+    {
+      "category": "health",
+      "completed": false,
+      "due_time": "08:00",
+      "id": "morning-vitals",
+      "name": "Morning Vitals Check",
+      "priority": "high"
+    },
+    {
+      "category": "exercise",
+      "completed": false,
+      "due_time": "10:00",
+      "duration_min": 30,
+      "id": "exercise-cardio",
+      "name": "Cardiovascular Exercise",
+      "priority": "high"
+    },
+    {
+      "category": "nutrition",
+      "completed": false,
+      "due_time": "12:00",
+      "id": "meal-log",
+      "name": "Meal Log",
+      "priority": "medium"
+    },
+    {
+      "category": "behavioral",
+      "completed": false,
+      "due_time": "18:00",
+      "id": "mood-checkin",
+      "name": "Mood Check-in",
+      "priority": "medium"
+    }
+  ]
+}

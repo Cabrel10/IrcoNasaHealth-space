@@ -1,0 +1,830 @@
+{
+  "active_alerts": [
+    {
+      "actions": [
+        "notify_crew",
+        "escalate_medical",
+        "notify_crew",
+        "notify_crew"
+      ],
+      "data_class": "synthetic",
+      "id": "demo-a01-day-124",
+      "persistence": "not_persisted",
+      "state": "simulated",
+      "triggered_rules": [
+        "FATIGUE_THRESHOLD_001",
+        "HR_PERSISTENT_003",
+        "HR_TREND_002",
+        "SLEEP_DURATION_001"
+      ],
+      "vigilance": "red"
+    }
+  ],
+  "anomalies": {
+    "available": false,
+    "items": [],
+    "reason": "No validated anomaly detector is configured."
+  },
+  "clinical_assessment": {
+    "available": false,
+    "diagnoses": [],
+    "reason": "IRCO does not diagnose diseases."
+  },
+  "data_class": "synthetic",
+  "data_quality": {
+    "data_class": "synthetic",
+    "no_data": 15,
+    "suspect": 0,
+    "valid": 3
+  },
+  "global": {
+    "badges": [
+      "simulated"
+    ],
+    "confidence": "low_synthetic",
+    "level": "red"
+  },
+  "hazards": [
+    {
+      "id": "radiation",
+      "indicators": [],
+      "level": "no_data"
+    },
+    {
+      "id": "isolation",
+      "indicators": [],
+      "level": "no_data"
+    },
+    {
+      "id": "hostile_environment",
+      "indicators": [],
+      "level": "no_data"
+    },
+    {
+      "id": "distance_from_earth",
+      "indicators": [],
+      "level": "no_data"
+    },
+    {
+      "id": "altered_gravity",
+      "indicators": [],
+      "level": "no_data"
+    }
+  ],
+  "indicators": [
+    {
+      "age_seconds": 0,
+      "baseline": {
+        "mean": 97.69285714285715,
+        "median": 97.7,
+        "sample_count": 14,
+        "standard_deviation": 6.385190934130798
+      },
+      "data_class": "synthetic",
+      "data_status": "fresh",
+      "expected_frequency": "continuous or daily",
+      "history": [
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-21T06:00:00Z",
+          "value": 87.4
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-22T06:00:00Z",
+          "value": 89.0
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-23T06:00:00Z",
+          "value": 90.6
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-24T06:00:00Z",
+          "value": 92.1
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-25T06:00:00Z",
+          "value": 93.7
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-26T06:00:00Z",
+          "value": 95.3
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-27T06:00:00Z",
+          "value": 96.9
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-28T06:00:00Z",
+          "value": 98.5
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-29T06:00:00Z",
+          "value": 100.1
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-30T06:00:00Z",
+          "value": 101.7
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-01T06:00:00Z",
+          "value": 103.2
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-02T06:00:00Z",
+          "value": 104.8
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-03T06:00:00Z",
+          "value": 106.4
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-04T06:00:00Z",
+          "value": 108.0
+        }
+      ],
+      "id": "heart_rate",
+      "last_updated": "2026-05-04T06:00:00Z",
+      "measurement_quality": "valid",
+      "quality": "synthetic",
+      "source": "SYNTHETIC_A01",
+      "spark": [
+        87.4,
+        89.0,
+        90.6,
+        92.1,
+        93.7,
+        95.3,
+        96.9,
+        98.5,
+        100.1,
+        101.7,
+        103.2,
+        104.8,
+        106.4,
+        108.0
+      ],
+      "status": "fresh",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 120.0,
+        "reference_min": 40.0
+      },
+      "trend": "rising",
+      "unit": "bpm",
+      "value": 108.0
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "blood_pressure_systolic",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 140.0,
+        "reference_min": 90.0
+      },
+      "trend": "no_data",
+      "unit": "mmHg",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "blood_pressure_diastolic",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 90.0,
+        "reference_min": 60.0
+      },
+      "trend": "no_data",
+      "unit": "mmHg",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "continuous or daily",
+      "history": [],
+      "id": "spo2",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 100.0,
+        "reference_min": 95.0
+      },
+      "trend": "no_data",
+      "unit": "percent",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "continuous",
+      "history": [],
+      "id": "respiratory_rate",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 20.0,
+        "reference_min": 12.0
+      },
+      "trend": "no_data",
+      "unit": "breaths/min",
+      "value": null
+    },
+    {
+      "age_seconds": 0,
+      "baseline": {
+        "mean": 5.0,
+        "median": 5.0,
+        "sample_count": 14,
+        "standard_deviation": 0.5056820005836531
+      },
+      "data_class": "synthetic",
+      "data_status": "fresh",
+      "expected_frequency": "daily",
+      "history": [
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-21T06:00:00Z",
+          "value": 5.8
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-22T06:00:00Z",
+          "value": 5.7
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-23T06:00:00Z",
+          "value": 5.6
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-24T06:00:00Z",
+          "value": 5.4
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-25T06:00:00Z",
+          "value": 5.3
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-26T06:00:00Z",
+          "value": 5.2
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-27T06:00:00Z",
+          "value": 5.1
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-28T06:00:00Z",
+          "value": 4.9
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-29T06:00:00Z",
+          "value": 4.8
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-30T06:00:00Z",
+          "value": 4.7
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-01T06:00:00Z",
+          "value": 4.6
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-02T06:00:00Z",
+          "value": 4.4
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-03T06:00:00Z",
+          "value": 4.3
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-04T06:00:00Z",
+          "value": 4.2
+        }
+      ],
+      "id": "sleep_duration",
+      "last_updated": "2026-05-04T06:00:00Z",
+      "measurement_quality": "valid",
+      "quality": "synthetic",
+      "source": "SYNTHETIC_A01",
+      "spark": [
+        5.8,
+        5.7,
+        5.6,
+        5.4,
+        5.3,
+        5.2,
+        5.1,
+        4.9,
+        4.8,
+        4.7,
+        4.6,
+        4.4,
+        4.3,
+        4.2
+      ],
+      "status": "fresh",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 9.0,
+        "reference_min": 6.0
+      },
+      "trend": "falling",
+      "unit": "hours",
+      "value": 4.2
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "sleep_quality",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 10.0,
+        "reference_min": 1.0
+      },
+      "trend": "no_data",
+      "unit": "score",
+      "value": null
+    },
+    {
+      "age_seconds": 0,
+      "baseline": {
+        "mean": 6.657142857142857,
+        "median": 6.699999999999999,
+        "sample_count": 14,
+        "standard_deviation": 0.8491292058122045
+      },
+      "data_class": "synthetic",
+      "data_status": "fresh",
+      "expected_frequency": "daily",
+      "history": [
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-21T06:00:00Z",
+          "value": 5.3
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-22T06:00:00Z",
+          "value": 5.5
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-23T06:00:00Z",
+          "value": 5.7
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-24T06:00:00Z",
+          "value": 5.9
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-25T06:00:00Z",
+          "value": 6.1
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-26T06:00:00Z",
+          "value": 6.3
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-27T06:00:00Z",
+          "value": 6.6
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-28T06:00:00Z",
+          "value": 6.8
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-29T06:00:00Z",
+          "value": 7.0
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-04-30T06:00:00Z",
+          "value": 7.2
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-01T06:00:00Z",
+          "value": 7.4
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-02T06:00:00Z",
+          "value": 7.6
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-03T06:00:00Z",
+          "value": 7.8
+        },
+        {
+          "quality": "valid",
+          "timestamp": "2026-05-04T06:00:00Z",
+          "value": 8.0
+        }
+      ],
+      "id": "fatigue_score",
+      "last_updated": "2026-05-04T06:00:00Z",
+      "measurement_quality": "valid",
+      "quality": "synthetic",
+      "source": "SYNTHETIC_A01",
+      "spark": [
+        5.3,
+        5.5,
+        5.7,
+        5.9,
+        6.1,
+        6.3,
+        6.6,
+        6.8,
+        7.0,
+        7.2,
+        7.4,
+        7.6,
+        7.8,
+        8.0
+      ],
+      "status": "fresh",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 10.0,
+        "reference_min": 0.0
+      },
+      "trend": "rising",
+      "unit": "score",
+      "value": 8.0
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "stress_score",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 10.0,
+        "reference_min": 0.0
+      },
+      "trend": "no_data",
+      "unit": "score",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "mood_score",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 10.0,
+        "reference_min": 1.0
+      },
+      "trend": "no_data",
+      "unit": "score",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "body_temperature",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 37.5,
+        "reference_min": 36.0
+      },
+      "trend": "no_data",
+      "unit": "degC",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "1min",
+      "history": [],
+      "id": "temperature_iss",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 28.0,
+        "reference_min": 18.0
+      },
+      "trend": "no_data",
+      "unit": "degC",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "1min",
+      "history": [],
+      "id": "humidity_iss",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 75.0,
+        "reference_min": 25.0
+      },
+      "trend": "no_data",
+      "unit": "percent",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "1min",
+      "history": [],
+      "id": "co2_cabin",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 5000.0,
+        "reference_min": 0.0
+      },
+      "trend": "no_data",
+      "unit": "ppm",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "radiation_dose_daily",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 1.5,
+        "reference_min": 0.0
+      },
+      "trend": "no_data",
+      "unit": "mSv",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "1min",
+      "history": [],
+      "id": "xray_flux_short",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "provisional",
+      "thresholds": {
+        "reference_max": 0.0001,
+        "reference_min": 0.0
+      },
+      "trend": "no_data",
+      "unit": "W/m2",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "1min",
+      "history": [],
+      "id": "solar_wind_speed",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "provisional",
+      "thresholds": {
+        "reference_max": 800.0,
+        "reference_min": 250.0
+      },
+      "trend": "no_data",
+      "unit": "km/s",
+      "value": null
+    },
+    {
+      "age_seconds": null,
+      "baseline": null,
+      "data_class": "synthetic",
+      "data_status": "no_data",
+      "expected_frequency": "daily",
+      "history": [],
+      "id": "exercise_duration",
+      "last_updated": null,
+      "measurement_quality": "no_data",
+      "quality": "synthetic",
+      "source": null,
+      "spark": [],
+      "status": "no_data",
+      "threshold_status": "illustrative",
+      "thresholds": {
+        "reference_max": 180.0,
+        "reference_min": 0.0
+      },
+      "trend": "no_data",
+      "unit": "minutes",
+      "value": null
+    }
+  ],
+  "last_updated": "2026-05-04T06:00:00Z",
+  "medical_notice": "This service provides traceable decision support, not a medical diagnosis or disease determination.",
+  "mission": {
+    "earth_delay_min": 12,
+    "environment": "deep_space",
+    "mission_day": 124,
+    "mission_id": "IRCO-DEMO",
+    "mode": "autonomous",
+    "simulated": true
+  },
+  "mode": "demo",
+  "routine": {
+    "date": "2026-05-04",
+    "progress": {
+      "completed": 0,
+      "percentage": 0,
+      "total": 4
+    },
+    "subject_id": "A-01",
+    "tasks": [
+      {
+        "category": "health",
+        "completed": false,
+        "due_time": "08:00",
+        "id": "morning-vitals",
+        "name": "Morning Vitals Check",
+        "priority": "high"
+      },
+      {
+        "category": "exercise",
+        "completed": false,
+        "due_time": "10:00",
+        "duration_min": 30,
+        "id": "exercise-cardio",
+        "name": "Cardiovascular Exercise",
+        "priority": "high"
+      },
+      {
+        "category": "nutrition",
+        "completed": false,
+        "due_time": "12:00",
+        "id": "meal-log",
+        "name": "Meal Log",
+        "priority": "medium"
+      },
+      {
+        "category": "behavioral",
+        "completed": false,
+        "due_time": "18:00",
+        "id": "mood-checkin",
+        "name": "Mood Check-in",
+        "priority": "medium"
+      }
+    ]
+  },
+  "services": {
+    "ai": "offline",
+    "engine": "ok",
+    "knowledge": "ok"
+  },
+  "subject_id": "A-01",
+  "triggered_rules": [
+    "FATIGUE_THRESHOLD_001",
+    "HR_PERSISTENT_003",
+    "HR_TREND_002",
+    "SLEEP_DURATION_001"
+  ]
+}
