@@ -22,6 +22,7 @@
 - [Project Structure](#project-structure)
 - [Design Principles](#design-principles)
 - [Testing](#testing)
+- [Continuous Integration](#continuous-integration)
 - [Project Status](#project-status)
 - [Documentation](#documentation)
 - [License](#license)
@@ -173,15 +174,31 @@ nase/
 
 ## Testing
 
-Run the currently available focused checks from the repository root:
+Run the complete local CI suite from the repository root:
 
 ```bash
-CARGO_BUILD_JOBS=1 cargo test --workspace
-python3 tests/contracts_test.py
-python3 tests/test_acquire_data.py
-python3 tests/test_pivot_builder.py
-python3 tests/test_import_pivot.py
+./scripts/check_ci.sh
 ```
+
+## Continuous Integration
+
+GitHub Actions runs Rust formatting, workspace tests, Clippy, Python contract
+validation, and acquisition/pivot/import tests on every push and pull request.
+The same full suite can be run locally with `scripts/check_ci.sh`.
+
+Install repository-local Git hooks on each clone with:
+
+```bash
+./scripts/install_git_hooks.sh
+```
+
+The pre-commit hook checks formatting, workspace tests, and contracts; the
+pre-push hook runs the full CI suite. These hooks are local safeguards and can
+be bypassed, so protect the default branch on GitHub and require the
+**Rust format, tests, and lint** and **Python contracts and pipeline tests**
+checks before merging. CI verifies
+changes but does not deploy the service; a deployment target and credentials
+have not been configured.
 
 ## Project Status
 
