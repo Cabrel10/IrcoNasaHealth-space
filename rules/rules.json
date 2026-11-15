@@ -1,0 +1,245 @@
+{
+  "version": "0.1.0",
+  "rules": [
+    {
+      "rule_id": "HR_THRESHOLD_001",
+      "indicator": "heart_rate",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 40,
+          "max": 120
+        }
+      },
+      "context_required": ["activity"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "request_reassessment",
+      "justification_template": "Heart rate {value} {unit} is outside the illustrative demo range [{threshold}] during {activity}.",
+      "scientific_reference": "Illustrative synthetic-demo rule only; not a validated clinical threshold",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 60
+    },
+    {
+      "rule_id": "HR_TREND_002",
+      "indicator": "heart_rate",
+      "condition": {
+        "type": "trend_slope",
+        "params": {
+          "window_days": 7,
+          "slope_threshold": 0.3,
+          "min_samples": 7
+        }
+      },
+      "context_required": ["individual_baseline"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "notify_crew",
+      "justification_template": "Heart rate trending upward at {slope} bpm/day over {window} days (baseline: {baseline} bpm).",
+      "scientific_reference": "Illustrative synthetic-demo threshold only; not a validated clinical threshold",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 55
+    },
+    {
+      "rule_id": "HR_PERSISTENT_003",
+      "indicator": "heart_rate",
+      "condition": {
+        "type": "persistent_deviation",
+        "params": {
+          "deviation_percent": 20,
+          "persistence_count": 5,
+          "window_days": 5,
+          "deviation_direction": "above"
+        }
+      },
+      "context_required": ["individual_baseline", "activity"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "red",
+      "action": "escalate_medical",
+      "justification_template": "Heart rate persistently {deviation_percent}% above baseline for {persistence_count} consecutive readings over {window} days.",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 80
+    },
+    {
+      "rule_id": "SPO2_THRESHOLD_001",
+      "indicator": "spo2",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 92,
+          "max": 100
+        }
+      },
+      "context_required": [],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "red",
+      "action": "escalate_medical",
+      "justification_template": "SpO₂ at {value}% is outside the illustrative demo range [{threshold}]%.",
+      "scientific_reference": "Illustrative synthetic-demo rule only; not clinical guidance",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 90
+    },
+    {
+      "rule_id": "SLEEP_DURATION_001",
+      "indicator": "sleep_duration",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 5.0,
+          "max": 10.0
+        }
+      },
+      "context_required": [],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "notify_crew",
+      "justification_template": "Sleep duration {value} hours is outside the illustrative demo range [{threshold}].",
+      "scientific_reference": "Illustrative synthetic-demo rule only; not a validated clinical threshold",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 50
+    },
+    {
+      "rule_id": "SLEEP_TREND_002",
+      "indicator": "sleep_duration",
+      "condition": {
+        "type": "trend_slope",
+        "params": {
+          "window_days": 7,
+          "slope_threshold": -0.3,
+          "min_samples": 5
+        }
+      },
+      "context_required": [],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "request_reassessment",
+      "justification_template": "Sleep duration declining at {slope} hours/day over the past {window} days.",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 55
+    },
+    {
+      "rule_id": "FATIGUE_THRESHOLD_001",
+      "indicator": "fatigue_score",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 0,
+          "max": 7
+        }
+      },
+      "context_required": [],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "notify_crew",
+      "justification_template": "Fatigue score {value}/10 exceeds attention threshold.",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 50
+    },
+    {
+      "rule_id": "RADIATION_DOSE_001",
+      "indicator": "radiation_dose_daily",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 0,
+          "max": 1.5
+        }
+      },
+      "context_required": ["environment"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "red",
+      "action": "escalate_medical",
+      "justification_template": "Synthetic daily radiation value {value} {unit} exceeds the illustrative demo limit of {threshold} {unit}.",
+      "scientific_reference": "Illustrative synthetic-demo rule only; not an operational radiation limit",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 85
+    },
+    {
+      "rule_id": "CO2_CABIN_001",
+      "indicator": "co2_cabin",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 0,
+          "max": 5000
+        }
+      },
+      "context_required": ["environment"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "notify_crew",
+      "justification_template": "Cabin CO₂ at {value} {unit} exceeds the illustrative demo limit of {threshold} {unit}.",
+      "scientific_reference": "Illustrative synthetic-demo rule only; not an operational cabin limit",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 65
+    },
+    {
+      "rule_id": "TEMP_ISS_001",
+      "indicator": "temperature_iss",
+      "condition": {
+        "type": "absolute_threshold",
+        "params": {
+          "min": 18.0,
+          "max": 28.0
+        }
+      },
+      "context_required": ["environment"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "log_only",
+      "justification_template": "Synthetic cabin temperature {value} {unit} outside the illustrative demo range [{threshold}].",
+      "scientific_reference": "Illustrative synthetic-demo rule only; not an operational cabin limit",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 30
+    },
+    {
+      "rule_id": "MISSING_HR_001",
+      "indicator": "heart_rate",
+      "condition": {
+        "type": "missing_data",
+        "params": {
+          "max_gap_hours": 36
+        }
+      },
+      "context_required": [],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "amber",
+      "action": "request_new_measurement",
+      "justification_template": "No valid heart-rate data received for {gap_hours} hours (demo threshold: {threshold} hours).",
+      "scientific_reference": "Illustrative synthetic-demo freshness rule only",
+      "status": "illustrative",
+      "enabled": true,
+      "priority": 40
+    },
+    {
+      "rule_id": "COMPOSITE_FATIGUE_001",
+      "indicator": "fatigue_score",
+      "condition": {
+        "type": "composite",
+        "params": {
+          "sub_rules": ["HR_TREND_002", "SLEEP_TREND_002"],
+          "composite_operator": "and"
+        }
+      },
+      "context_required": ["individual_baseline"],
+      "data_class_filter": ["synthetic"],
+      "vigilance_level": "red",
+      "action": "escalate_medical",
+      "justification_template": "Combined illustrative pattern: configured heart-rate and sleep rules co-triggered; not a diagnosis or validated correlation.",
+      "scientific_reference": "Illustrative relationship only; disabled pending scientific validation",
+      "status": "illustrative",
+      "enabled": false,
+      "priority": 75
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://irco.nasa-spaceapps.dev/schemas/rules/v0",
+  "title": "IRCO Decision Rules Schema v0",
+  "description": "Defines the structure for deterministic health surveillance rules. Rules are loaded from JSON files and evaluated by the Rust decision engine without recompilation.",
+  "type": "object",
+  "required": ["version", "rules"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version.",
+      "const": "0.1.0"
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Rule" }
+    }
+  },
+  "definitions": {
+    "Rule": {
+      "type": "object",
+      "required": ["rule_id", "indicator", "condition", "action", "status"],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "description": "Unique rule identifier. Convention: {INDICATOR}_{TYPE}_{SEQ}. Example: HR_THRESHOLD_001.",
+          "pattern": "^[A-Z][A-Z0-9_]{3,63}$"
+        },
+        "indicator": {
+          "type": "string",
+          "description": "Target indicator name (must match pivot indicator field)."
+        },
+        "condition": {
+          "type": "object",
+          "description": "Condition that triggers the rule.",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "absolute_threshold",
+                "baseline_deviation",
+                "trend_slope",
+                "persistent_deviation",
+                "rate_of_change",
+                "missing_data",
+                "composite"
+              ]
+            },
+            "params": {
+              "type": "object",
+              "description": "Parameters specific to the condition type.",
+              "properties": {
+                "min": { "type": "number", "description": "Lower threshold." },
+                "max": { "type": "number", "description": "Upper threshold." },
+                "deviation_percent": { "type": "number", "minimum": 0, "description": "Minimum absolute percentage deviation from the numeric context.individual_baseline. When configured with deviation_absolute, either threshold triggers the rule." },
+                "deviation_absolute": { "type": "number", "minimum": 0, "description": "Minimum absolute deviation from the numeric context.individual_baseline. When configured with deviation_percent, either threshold triggers the rule." },
+                "window_hours": { "type": "number", "description": "Time window in hours for trend/persistence analysis." },
+                "window_days": { "type": "integer", "minimum": 1, "description": "Time window in days." },
+                "min_samples": { "type": "integer", "minimum": 2, "description": "Minimum valid samples in the window." },
+                "slope_threshold": { "type": "number", "description": "Signed slope threshold per day: non-negative values trigger at or above the threshold; negative values trigger at or below it." },
+                "persistence_count": { "type": "integer", "description": "Number of consecutive violations for persistent_deviation." },
+                "deviation_direction": { "type": "string", "enum": ["above", "below", "either"], "description": "Direction of the percentage deviation for persistent_deviation." },
+                "max_gap_hours": { "type": "number", "exclusiveMinimum": 0, "description": "Maximum acceptable gap before missing_data triggers." },
+                "sub_rules": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string" },
+                  "description": "For composite rules: rule IDs combined using composite_operator."
+                },
+                "composite_operator": {
+                  "type": "string",
+                  "enum": ["and", "or"],
+                  "description": "Logical operator for composite sub-rules."
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "context_required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required context fields for the rule to apply. Examples: activity, individual_baseline, sleep_state, mission_phase.",
+          "default": []
+        },
+        "data_class_filter": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["measured_real", "analog", "synthetic"]
+          },
+          "description": "If set, rule only applies to observations of these data classes. Default: all classes.",
+          "default": ["measured_real", "analog", "synthetic"]
+        },
+        "vigilance_level": {
+          "type": "string",
+          "enum": ["green", "amber", "red"],
+          "description": "Vigilance level produced when this rule triggers."
+        },
+        "action": {
+          "type": "string",
+          "description": "Action to take when triggered.",
+          "enum": [
+            "log_only",
+            "notify_crew",
+            "request_reassessment",
+            "request_new_measurement",
+            "escalate_medical",
+            "auto_followup"
+          ]
+        },
+        "justification_template": {
+          "type": "string",
+          "description": "Human-readable template for the alert justification. Use {indicator}, {value}, {unit}, {threshold}, {baseline}, {window} as placeholders."
+        },
+        "scientific_reference": {
+          "type": "string",
+          "description": "Citation or reference supporting this rule's thresholds/logic."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["validated", "provisional", "illustrative"],
+          "description": "Validation status of the rule. validated = peer-reviewed thresholds. provisional = reasonable defaults pending validation. illustrative = demonstration only."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this rule is active."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50,
+          "description": "Priority for conflict resolution when multiple rules fire. Higher = more important."
+        }
+      }
+    }
+  }
+}

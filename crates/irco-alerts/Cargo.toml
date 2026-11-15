@@ -1,0 +1,10 @@
+[package]
+name = "irco-alerts"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+irco-core = { path = "../irco-core" }
+chrono = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"

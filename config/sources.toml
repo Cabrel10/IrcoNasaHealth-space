@@ -1,0 +1,31 @@
+[nasa_eda]
+base_url = "https://visualization.osdr.nasa.gov/eda"
+timeout_seconds = 120
+max_retries = 3
+retry_delay_seconds = 5
+fallback_to_dashboards = true
+missions = ["RR-1"]
+
+[noaa_swpc]
+xray_url = "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json"
+solar_wind_url = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
+timeout_seconds = 60
+max_retries = 3
+
+[physionet]
+base_url = "https://physionet.org"
+mimic_demo = true
+sleep_edf_max_nights = 3
+
+[uci_mhealth]
+url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00319/MHEALTHDATASET.zip"
+timeout_seconds = 300
+
+[celss]
+url = "https://ndownloader.figshare.com/files/15200876"
+license = "CC-BY-4.0"
+
+[general]
+cache_dir = "data/raw"
+max_total_mb = 250
+verify_sha256 = true

@@ -1,0 +1,78 @@
+{
+  "version": "0.1.0",
+  "generated_at": "2026-11-15T00:22:46.875187+00:00",
+  "collector_version": "0.1.0",
+  "entries": [
+    {
+      "source": "NOAA_SWPC_XRAY",
+      "url": "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json",
+      "local_path": "data/raw/noaa/swpc/xrays-7-day.json",
+      "data_class": "measured_real",
+      "download_date": "2026-11-14T23:14:26.409058+00:00",
+      "http_status": 200,
+      "file_size_bytes": 4591811,
+      "sha256": "13b16bb3cc4ae473d4e84a2fc19503c7f179b502fa2118240acda23428bae539",
+      "license": "public_domain",
+      "retries": 0,
+      "error": null,
+      "notes": "GOES X-ray flux, latest 7-day feed. Reused verified local cache."
+    },
+    {
+      "source": "NOAA_SWPC_SOLAR_WIND",
+      "url": "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json",
+      "local_path": "data/raw/noaa/swpc/solar-wind-plasma-1-day.json",
+      "data_class": "measured_real",
+      "download_date": "2026-11-14T23:14:26.418697+00:00",
+      "http_status": 200,
+      "file_size_bytes": 2873790,
+      "sha256": "4167bfeaca0df871fc8510b4e4abb5fa776dbb37a4b9d635a7b79e5650a07c97",
+      "license": "public_domain",
+      "retries": 0,
+      "error": null,
+      "notes": "Solar-wind plasma, latest 1-day feed. Reused verified local cache."
+    },
+    {
+      "source": "UCI_MHEALTH",
+      "url": "https://archive.ics.uci.edu/ml/machine-learning-databases/00319/MHEALTHDATASET.zip",
+      "local_path": "data/raw/uci/MHEALTHDATASET.zip",
+      "data_class": "analog",
+      "download_date": "2026-11-14T23:34:31.129819+00:00",
+      "http_status": 200,
+      "file_size_bytes": 75567983,
+      "sha256": "16ad0ce709f3f00df18f348610d15bce0884b79e2143f57f446493673f02b8e0",
+      "license": "CC-BY-4.0",
+      "retries": 0,
+      "error": null,
+      "notes": "Analog physiological dataset; retain original archive unchanged. Reused verified local cache."
+    },
+    {
+      "source": "NASA_OSDR_EDA_RR_1",
+      "url": "https://visualization.osdr.nasa.gov/eda/dashboard_RR-1",
+      "local_path": "data/raw/nasa/eda/dashboard_RR-1.html",
+      "data_class": "measured_real",
+      "download_date": "2026-11-14T23:33:52.353986+00:00",
+      "http_status": 200,
+      "file_size_bytes": 706969,
+      "sha256": "d7284e1d82a9ca6fe56670fa7ac48fcff4fb361c4f6a6025ede7087352a7c0aa",
+      "license": "public_domain",
+      "retries": 0,
+      "error": null,
+      "notes": "NASA EDA per-mission dashboard, mission RR-1. Reused verified local cache."
+    },
+    {
+      "source": "CELSS",
+      "url": "https://ndownloader.figshare.com/files/15200876",
+      "local_path": "data/raw/celss/celss-supplementary-data.zip",
+      "data_class": "analog",
+      "download_date": "2026-11-15T00:22:46.145840+00:00",
+      "http_status": 200,
+      "file_size_bytes": 945025,
+      "sha256": "990216c0bcf1096df3f856c434a74ccf9f0fb08f3de208229f96ae715f836c95",
+      "license": "CC-BY-4.0",
+      "retries": 0,
+      "error": null,
+      "notes": "Frontiers supplementary archive with two JPEG figures; it contains no machine-readable measurements to pivot.",
+      "content_type": "application/zip"
+    }
+  ]
+}

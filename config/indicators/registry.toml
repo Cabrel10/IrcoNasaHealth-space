@@ -1,0 +1,276 @@
+# IRCO Indicator Registry v0
+#
+# This file defines all indicators recognized by the IRCO health engine.
+# Adding an indicator here does NOT require recompilation of the Rust engine.
+# The engine loads this file at startup and on reload.
+#
+# Status: illustrative = demo only, provisional = reasonable defaults, validated = peer-reviewed
+
+[format]
+version = "0.1.0"
+
+# ─── CARDIOVASCULAR ───────────────────────────────────────────────
+
+[[indicators]]
+id = "heart_rate"
+name = "Heart Rate"
+family = "cardiovascular"
+unit = "bpm"
+collection_method = "wearable_sensor"
+expected_frequency = "continuous or daily"
+sources = ["PHYSIONET_MIMIC", "UCI_MHEALTH", "SYNTHETIC_A01"]
+reference_min = 40.0
+reference_max = 120.0
+reference_source = "Standard clinical range (rest)"
+reference_status = "illustrative"
+scientific_refs = ["NASA HRP — Cardiovascular risks in microgravity"]
+
+[[indicators]]
+id = "blood_pressure_systolic"
+name = "Systolic Blood Pressure"
+family = "cardiovascular"
+unit = "mmHg"
+collection_method = "cuff_measurement"
+expected_frequency = "daily"
+sources = ["PHYSIONET_MIMIC"]
+reference_min = 90.0
+reference_max = 140.0
+reference_source = "Standard clinical range"
+reference_status = "illustrative"
+scientific_refs = []
+
+[[indicators]]
+id = "blood_pressure_diastolic"
+name = "Diastolic Blood Pressure"
+family = "cardiovascular"
+unit = "mmHg"
+collection_method = "cuff_measurement"
+expected_frequency = "daily"
+sources = ["PHYSIONET_MIMIC"]
+reference_min = 60.0
+reference_max = 90.0
+reference_source = "Standard clinical range"
+reference_status = "illustrative"
+scientific_refs = []
+
+# ─── RESPIRATORY ──────────────────────────────────────────────────
+
+[[indicators]]
+id = "spo2"
+name = "Blood Oxygen Saturation"
+family = "respiratory"
+unit = "percent"
+collection_method = "pulse_oximeter"
+expected_frequency = "continuous or daily"
+sources = ["PHYSIONET_MIMIC", "UCI_MHEALTH"]
+reference_min = 95.0
+reference_max = 100.0
+reference_source = "Standard clinical range"
+reference_status = "illustrative"
+scientific_refs = []
+
+[[indicators]]
+id = "respiratory_rate"
+name = "Respiratory Rate"
+family = "respiratory"
+unit = "breaths/min"
+collection_method = "wearable_sensor"
+expected_frequency = "continuous"
+sources = ["PHYSIONET_MIMIC"]
+reference_min = 12.0
+reference_max = 20.0
+reference_source = "Standard clinical range"
+reference_status = "illustrative"
+scientific_refs = []
+
+# ─── SLEEP ────────────────────────────────────────────────────────
+
+[[indicators]]
+id = "sleep_duration"
+name = "Sleep Duration"
+family = "sleep"
+unit = "hours"
+collection_method = "self_report_or_actigraphy"
+expected_frequency = "daily"
+sources = ["PHYSIONET_SLEEP_EDF", "SYNTHETIC_A01"]
+reference_min = 6.0
+reference_max = 9.0
+reference_source = "NASA HRP sleep recommendations (illustrative)"
+reference_status = "illustrative"
+scientific_refs = ["NASA HRP — Sleep and fatigue risks"]
+
+[[indicators]]
+id = "sleep_quality"
+name = "Sleep Quality Score"
+family = "sleep"
+unit = "score"
+collection_method = "questionnaire"
+expected_frequency = "daily"
+sources = ["SYNTHETIC_A01"]
+reference_min = 1.0
+reference_max = 10.0
+reference_source = "Illustrative scale"
+reference_status = "illustrative"
+scientific_refs = []
+
+# ─── PSYCHOLOGICAL ────────────────────────────────────────────────
+
+[[indicators]]
+id = "fatigue_score"
+name = "Fatigue Score"
+family = "psychological"
+unit = "score"
+collection_method = "self_report"
+expected_frequency = "daily"
+sources = ["SYNTHETIC_A01"]
+reference_min = 0.0
+reference_max = 10.0
+reference_source = "Illustrative 0-10 scale"
+reference_status = "illustrative"
+scientific_refs = ["NASA HRP — Behavioral health risks"]
+
+[[indicators]]
+id = "stress_score"
+name = "Stress Score"
+family = "psychological"
+unit = "score"
+collection_method = "self_report_or_physiological"
+expected_frequency = "daily"
+sources = ["FIGSHARE_CELSS", "SYNTHETIC_A01"]
+reference_min = 0.0
+reference_max = 10.0
+reference_source = "Illustrative scale"
+reference_status = "illustrative"
+scientific_refs = []
+
+[[indicators]]
+id = "mood_score"
+name = "Mood Score"
+family = "psychological"
+unit = "score"
+collection_method = "self_report"
+expected_frequency = "daily"
+sources = ["SYNTHETIC_A01"]
+reference_min = 1.0
+reference_max = 10.0
+reference_source = "Illustrative scale"
+reference_status = "illustrative"
+scientific_refs = []
+
+# ─── THERMAL ──────────────────────────────────────────────────────
+
+[[indicators]]
+id = "body_temperature"
+name = "Body Temperature"
+family = "thermal"
+unit = "degC"
+collection_method = "thermometer"
+expected_frequency = "daily"
+sources = ["SYNTHETIC_A01"]
+reference_min = 36.0
+reference_max = 37.5
+reference_source = "Standard clinical range"
+reference_status = "illustrative"
+scientific_refs = []
+
+# ─── ENVIRONMENT ──────────────────────────────────────────────────
+
+[[indicators]]
+id = "temperature_iss"
+name = "ISS Cabin Temperature"
+family = "environment"
+unit = "degC"
+collection_method = "ISS_sensor"
+expected_frequency = "1min"
+sources = ["NASA_OSDR_EDA"]
+reference_min = 18.0
+reference_max = 28.0
+reference_source = "ISS ECLSS operational range (illustrative)"
+reference_status = "illustrative"
+scientific_refs = []
+
+[[indicators]]
+id = "humidity_iss"
+name = "ISS Cabin Humidity"
+family = "environment"
+unit = "percent"
+collection_method = "ISS_sensor"
+expected_frequency = "1min"
+sources = ["NASA_OSDR_EDA"]
+reference_min = 25.0
+reference_max = 75.0
+reference_source = "ISS ECLSS operational range (illustrative)"
+reference_status = "illustrative"
+scientific_refs = []
+
+[[indicators]]
+id = "co2_cabin"
+name = "Cabin CO₂ Level"
+family = "environment"
+unit = "ppm"
+collection_method = "ISS_sensor"
+expected_frequency = "1min"
+sources = ["NASA_OSDR_EDA", "SYNTHETIC_A01"]
+reference_min = 0.0
+reference_max = 5000.0
+reference_source = "ISS ECLSS acceptable limit (illustrative)"
+reference_status = "illustrative"
+scientific_refs = ["NASA HRP — Hostile/Closed Environment"]
+
+[[indicators]]
+id = "radiation_dose_daily"
+name = "Daily Radiation Dose"
+family = "environment"
+unit = "mSv"
+collection_method = "dosimeter"
+expected_frequency = "daily"
+sources = ["NASA_OSDR_EDA", "SYNTHETIC_A01"]
+reference_min = 0.0
+reference_max = 1.5
+reference_source = "Illustrative daily limit (actual limits are career-cumulative)"
+reference_status = "illustrative"
+scientific_refs = ["NASA OCHMO radiation exposure guidelines", "CSA radiation monitoring"]
+
+[[indicators]]
+id = "xray_flux_short"
+name = "Solar X-ray Flux (short)"
+family = "environment"
+unit = "W/m2"
+collection_method = "GOES_satellite"
+expected_frequency = "1min"
+sources = ["NOAA_SWPC"]
+reference_min = 0.0
+reference_max = 1.0e-4
+reference_source = "NOAA GOES classification"
+reference_status = "provisional"
+scientific_refs = []
+
+[[indicators]]
+id = "solar_wind_speed"
+name = "Solar Wind Speed"
+family = "environment"
+unit = "km/s"
+collection_method = "DSCOVR_satellite"
+expected_frequency = "1min"
+sources = ["NOAA_SWPC"]
+reference_min = 250.0
+reference_max = 800.0
+reference_source = "NOAA SWPC typical range"
+reference_status = "provisional"
+scientific_refs = []
+
+# ─── MUSCULOSKELETAL ──────────────────────────────────────────────
+
+[[indicators]]
+id = "exercise_duration"
+name = "Exercise Duration"
+family = "musculoskeletal"
+unit = "minutes"
+collection_method = "self_report_or_sensor"
+expected_frequency = "daily"
+sources = ["UCI_MHEALTH", "SYNTHETIC_A01"]
+reference_min = 0.0
+reference_max = 180.0
+reference_source = "ISS exercise protocol ~2h/day (illustrative)"
+reference_status = "illustrative"
+scientific_refs = ["NASA HRP — Musculoskeletal risks"]

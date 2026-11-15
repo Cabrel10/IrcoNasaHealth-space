@@ -1,0 +1,731 @@
+openapi: 3.0.3
+info:
+  title: IRCO Backend API
+  version: 0.1.0
+  description: Implemented API subset; see contracts/api.md for planned routes.
+servers:
+  - url: http://localhost:3080
+security:
+  - bearerAuth: []
+paths:
+  /openapi.json:
+    get:
+      operationId: getOpenApiDocument
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI document for the implemented API.
+          content:
+            application/json:
+              schema:
+                type: object
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Current API, database, and optional-service status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /version:
+    get:
+      operationId: getVersion
+      security: []
+      responses:
+        "200":
+          description: API and server version.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, api_version]
+                properties:
+                  version:
+                    type: string
+                  api_version:
+                    type: string
+  /api/v1/health:
+    get:
+      operationId: getApiHealth
+      responses:
+        "200":
+          description: Health status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /api/v1/rules:
+    get:
+      operationId: getRules
+      responses:
+        "200":
+          description: Loaded deterministic rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesDocument"
+  /api/v1/admin/rules/reload:
+    post:
+      operationId: reloadDeterministicRules
+      description: Validate and atomically replace active rules from the configured rules file without restarting the server.
+      responses:
+        "200":
+          description: The new ruleset is active.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, rules_loaded]
+                properties:
+                  version: { type: string }
+                  rules_loaded: { type: integer }
+        "422":
+          description: The configured rule file is missing, invalid, or semantically inconsistent; active rules are unchanged.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/indicators:
+    get:
+      operationId: listIndicators
+      responses:
+        "200":
+          description: The loaded indicator registry.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+        "503":
+          description: Indicator registry is not loaded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/indicators/{indicator_id}:
+    get:
+      operationId: getIndicator
+      parameters:
+        - in: path
+          name: indicator_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Registered indicator metadata and validation provenance.
+          content:
+            application/json:
+              schema: { type: object }
+        "404":
+          description: Indicator is not registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/state:
+    get:
+      operationId: getHealthOverview
+      description: Requires an explicit data class; subjects from different data classes are never combined.
+      parameters:
+        - in: query
+          name: data_class
+          required: true
+          schema:
+            type: string
+            enum: [measured_real, analog, synthetic]
+        - in: query
+          name: as_of
+          description: Optional UTC evaluation time used for freshness rules; defaults to the current time.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Current health state for subjects with observations in the requested data class.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data_class, subjects]
+                properties:
+                  data_class:
+                    type: string
+                    enum: [measured_real, analog, synthetic]
+                  subjects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HealthState"
+        "400":
+          description: Missing or invalid data class.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/state/{subject_id}:
+    get:
+      operationId: getSubjectHealthState
+      description: Requires an explicit data class. Missing-data rules are evaluated against as_of (or the current UTC time); no_data means no valid current measurement is available.
+      parameters:
+        - in: path
+          name: subject_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: data_class
+          required: true
+          schema:
+            type: string
+            enum: [measured_real, analog, synthetic]
+        - in: query
+          name: as_of
+          description: Optional UTC evaluation time used for freshness rules; defaults to the current time.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Latest values, descriptive temporal trends, alerts, and rule coverage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthState" }
+  /api/v1/observations:
+    get:
+      operationId: listObservations
+      parameters:
+        - in: query
+          name: subject_id
+          schema: { type: string }
+        - in: query
+          name: indicator
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: data_class
+          schema:
+            type: string
+            enum: [measured_real, analog, synthetic]
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 100 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc], default: asc }
+      responses:
+        "200":
+          description: Filtered page of persisted observations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total_returned, limit, offset, observations]
+                properties:
+                  total_returned: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                  observations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Observation"
+        "400":
+          description: Invalid query parameters.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Missing or invalid bearer token when authentication is configured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/observations/export:
+    get:
+      operationId: exportObservations
+      parameters:
+        - in: query
+          name: format
+          required: true
+          schema:
+            type: string
+            enum: [json, jsonl, csv]
+        - in: query
+          name: subject_id
+          schema: { type: string }
+        - in: query
+          name: indicator
+          schema: { type: string }
+        - in: query
+          name: data_class
+          schema:
+            type: string
+            enum: [measured_real, analog, synthetic]
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1000 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Filtered export in the requested format.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Observation" } }
+            application/x-ndjson:
+              schema: { type: string }
+            text/csv:
+              schema: { type: string }
+  /api/v1/ingest:
+    post:
+      operationId: ingestObservations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [observations]
+              properties:
+                observations:
+                  type: array
+                  items: { $ref: "#/components/schemas/Observation" }
+      responses:
+        "200":
+          description: Accepted batch and exact duplicate count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, rejected, errors, duplicates_skipped, alerts_created]
+                properties:
+                  accepted: { type: integer }
+                  rejected: { type: integer }
+                  errors:
+                    type: array
+                    items: { type: string }
+                  duplicates_skipped: { type: integer }
+                  alerts_created: { type: integer }
+        "400":
+          description: Malformed JSON or invalid request body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Missing or invalid bearer token when authentication is configured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: Invalid observation or conflicting observation identifier.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/alerts:
+    get:
+      operationId: listAlerts
+      parameters:
+        - in: query
+          name: subject_id
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Persisted alerts and their audit histories.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alerts, limit, offset]
+                properties:
+                  alerts:
+                    type: array
+                    items: { type: object }
+                  limit: { type: integer }
+                  offset: { type: integer }
+  /api/v1/alerts/{alert_id}:
+    patch:
+      operationId: transitionAlert
+      parameters:
+        - in: path
+          name: alert_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, detail]
+              properties:
+                state:
+                  type: string
+                  enum: [created, acknowledged, in_progress, reassessed, closed, escalated]
+                detail: { type: string }
+      responses:
+        "200":
+          description: Updated alert with appended audit event.
+          content:
+            application/json:
+              schema: { type: object }
+        "404":
+          description: Alert not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: Illegal transition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/alerts/{alert_id}/followup:
+    post:
+      operationId: recordAlertFollowup
+      parameters:
+        - in: path
+          name: alert_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [observation_id]
+              properties:
+                observation_id: { type: string }
+      responses:
+        "200":
+          description: Follow-up measurement linked to the alert.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alert_id, followup_measurements]
+                properties:
+                  alert_id: { type: string }
+                  followup_measurements: { type: integer }
+        "404":
+          description: Alert or observation not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /search:
+    get:
+      operationId: searchScientificCorpus
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 1 }
+        - in: query
+          name: hazard
+          schema: { type: string }
+        - in: query
+          name: indicator
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+      responses:
+        "200":
+          description: BM25 passages with source citation metadata, or source_not_found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, source_not_found, hits]
+                properties:
+                  available: { type: boolean }
+                  source_not_found: { type: boolean }
+                  hits:
+                    type: array
+                    items: { $ref: "#/components/schemas/KnowledgeHit" }
+        "503":
+          description: Offline corpus is not installed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /assistant:
+    post:
+      operationId: explainWithCitations
+      description: Extractive evidence fallback; never sets vigilance and always states the decision-support disclaimer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, minLength: 1, maxLength: 2000 }
+                hazard: { type: string }
+                indicator: { type: string }
+      responses:
+        "200":
+          description: A citation-backed passage or explicit source-not-found answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, citations, source_not_found, disclaimer, provider]
+                properties:
+                  answer: { type: string }
+                  citations:
+                    type: array
+                    items: { $ref: "#/components/schemas/Citation" }
+                  source_not_found: { type: boolean }
+                  disclaimer: { type: string }
+                  provider: { type: string }
+        "400":
+          description: Invalid question.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /knowledge/health:
+    get:
+      operationId: getKnowledgeHealth
+      responses:
+        "200":
+          description: Corpus availability and document count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, documents, retrieval]
+                properties:
+                  available: { type: boolean }
+                  documents: { type: integer }
+                  retrieval: { type: string }
+  /knowledge/hazards:
+    get:
+      operationId: listKnowledgeHazards
+      responses:
+        "200":
+          description: Known HRP hazard identifiers.
+          content:
+            application/json:
+              schema: { type: object }
+        "503":
+          description: Offline corpus is not installed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /knowledge/indicator/{indicator_id}:
+    get:
+      operationId: getIndicatorKnowledge
+      parameters:
+        - in: path
+          name: indicator_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Source-backed knowledge passages for an indicator.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, source_not_found, hits]
+                properties:
+                  available: { type: boolean }
+                  source_not_found: { type: boolean }
+                  hits:
+                    type: array
+                    items: { type: object }
+  /demo/scenarios:
+    get:
+      operationId: listDemoScenarios
+      security: []
+      responses:
+        "200":
+          description: Offline synthetic scenarios available for replay.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+  /demo/replay:
+    get:
+      operationId: replayDemoDay
+      security: []
+      parameters:
+        - in: query
+          name: scenario
+          schema:
+            type: string
+            enum: [a01, nominal, dropout]
+        - in: query
+          name: day
+          schema: { type: integer, minimum: 1, maximum: 124, default: 1 }
+      responses:
+        "200":
+          description: Reproducible day of a synthetic scenario.
+          content:
+            application/json:
+              schema: { type: object }
+  /demo/scenario:
+    get:
+      operationId: getDemoScenarioDay
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+            enum: [a01, nominal, dropout]
+        - in: query
+          name: day
+          schema: { type: integer, minimum: 1, maximum: 124, default: 1 }
+      responses:
+        "200":
+          description: Alias for replaying a scenario day.
+          content:
+            application/json:
+              schema: { type: object }
+  /demo/reset:
+    post:
+      operationId: resetDemoReplay
+      parameters:
+        - in: query
+          name: scenario
+          schema:
+            type: string
+            enum: [a01, nominal, dropout]
+      responses:
+        "200":
+          description: Return day one of a scenario; replay is stateless.
+          content:
+            application/json:
+              schema: { type: object }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Health:
+      type: object
+      required:
+        [status, version, uptime_seconds, database, rules_loaded, indicators_loaded, ai_available, knowledge_available]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        version: { type: string }
+        uptime_seconds: { type: integer }
+        database: { type: string, enum: [connected, unavailable] }
+        rules_loaded: { type: integer }
+        indicators_loaded: { type: integer }
+        ai_available: { type: boolean }
+        knowledge_available: { type: boolean }
+    Error:
+      type: object
+      required: [error, code, hint]
+      properties:
+        error: { type: string }
+        code: { type: string }
+        hint: { type: string }
+    Citation:
+      type: object
+      required: [document_id, title, publisher, url, section, page_numbers, document_date]
+      properties:
+        document_id: { type: string }
+        title: { type: string }
+        publisher: { type: string }
+        url: { type: string, format: uri }
+        section: { type: string }
+        page_numbers: { type: string, nullable: true }
+        document_date: { type: string, format: date, nullable: true }
+    KnowledgeHit:
+      type: object
+      required: [score, evidence, evidence_kind, citation, hazard, indicators_related, confidence]
+      properties:
+        score: { type: number }
+        evidence: { type: string }
+        evidence_kind: { type: string, enum: [source_excerpt, curated_summary] }
+        citation: { $ref: "#/components/schemas/Citation" }
+        hazard:
+          type: string
+          nullable: true
+          enum: [radiation, isolation, hostile_environment, distance_from_earth, altered_gravity]
+        indicators_related:
+          type: array
+          items: { type: string }
+        confidence:
+          type: string
+          nullable: true
+          enum: [established, supported, hypothesis, preliminary]
+    RulesDocument:
+      type: object
+      required: [version, rules]
+      properties:
+        version: { type: string }
+        rules:
+          type: array
+          items: { type: object }
+    HealthState:
+      type: object
+      required:
+        [subject_id, data_class, as_of, vigilance, supported_vigilance, indicators, missing_indicators, triggered_rules, alerts, thresholds_status, skipped_rules, history_truncated]
+      properties:
+        subject_id: { type: string }
+        data_class:
+          type: string
+          enum: [measured_real, analog, synthetic]
+        as_of: { type: string, format: date-time }
+        vigilance:
+          type: string
+          enum: [green, amber, red, no_data]
+        supported_vigilance:
+          type: string
+          enum: [green, amber, red, no_data]
+        indicators:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/IndicatorState"
+        missing_indicators: { type: array, items: { type: string } }
+        triggered_rules: { type: array, items: { type: string } }
+        alerts: { type: array, items: { type: object } }
+        last_updated: { type: string, format: date-time, nullable: true }
+        thresholds_status:
+          type: string
+          enum: [validated, provisional, illustrative, not_applicable]
+        skipped_rules: { type: array, items: { type: object } }
+        history_truncated: { type: boolean }
+    IndicatorState:
+      type: object
+      required: [latest, unit, last_updated, trend, quality, source, data_status]
+      properties:
+        latest: { type: number }
+        unit: { type: string }
+        last_updated: { type: string, format: date-time }
+        trend: { type: string }
+        slope_per_day: { type: number, nullable: true }
+        quality: { type: string }
+        source: { type: string }
+        data_status: { type: string, enum: [fresh, stale, invalid] }
+    Observation:
+      type: object
+      required: [id, timestamp, indicator, value, unit, source, data_class]
+      properties:
+        id: { type: string }
+        timestamp: { type: string, format: date-time }
+        subject_id: { type: string, nullable: true }
+        indicator: { type: string }
+        value: { type: number }
+        unit: { type: string }
+        source: { type: string }
+        data_class:
+          type: string
+          enum: [measured_real, analog, synthetic]
+        context: { type: object }
+        provenance: { type: object }
+        quality: { type: object }

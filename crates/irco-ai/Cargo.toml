@@ -1,0 +1,9 @@
+[package]
+name = "irco-ai"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+irco-core = { path = "../irco-core" }
+irco-knowledge = { path = "../irco-knowledge" }
+serde = { version = "1", features = ["derive"] }

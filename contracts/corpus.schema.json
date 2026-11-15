@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://irco.nasa-spaceapps.dev/schemas/corpus/v0",
+  "title": "IRCO Knowledge Corpus Entry",
+  "description": "Schema for scientific knowledge entries indexed by the BM25 search engine.",
+  "type": "object",
+  "required": ["id", "title", "source", "section", "url", "content"],
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "source": {
+      "type": "string",
+      "description": "Document or organization: NASA_HRP, CSA, ESA, etc."
+    },
+    "section": {
+      "type": "string",
+      "description": "Section path within the document."
+    },
+    "url": { "type": "string", "format": "uri" },
+    "content": {
+      "type": "string",
+      "description": "Text content for retrieval; evidence_kind distinguishes excerpts from curated summaries."
+    },
+    "evidence_kind": {
+      "type": "string",
+      "enum": ["source_excerpt", "curated_summary"],
+      "default": "curated_summary",
+      "description": "Distinguishes source text from authored summaries."
+    },
+    "hazard": {
+      "type": ["string", "null"],
+      "description": "Related NASA HRP hazard: radiation, isolation, hostile_environment, distance_from_earth, altered_gravity.",
+      "enum": ["radiation", "isolation", "hostile_environment", "distance_from_earth", "altered_gravity", null]
+    },
+    "indicators_related": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Indicator names related to this knowledge entry."
+    },
+    "organ_systems": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Affected organ systems: cardiovascular, musculoskeletal, neurological, etc."
+    },
+    "document_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Publication or source-reported update date; omit if not available."
+    },
+    "extraction_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when this corpus entry was prepared or refreshed."
+    },
+    "page_numbers": { "type": "string" },
+    "confidence": {
+      "type": "string",
+      "enum": ["established", "supported", "hypothesis", "preliminary"],
+      "description": "Level of scientific validation."
+    }
+  }
+}

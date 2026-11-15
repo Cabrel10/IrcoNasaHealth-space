@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://irco.nasa-spaceapps.dev/schemas/manifest/v0",
+  "title": "IRCO Data Acquisition Manifest",
+  "description": "Records the provenance and integrity of each downloaded raw data file.",
+  "type": "object",
+  "required": ["version", "generated_at", "entries"],
+  "properties": {
+    "version": { "type": "string", "const": "0.1.0" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "collector_version": { "type": "string" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "url", "local_path", "data_class", "download_date", "http_status"],
+        "properties": {
+          "source": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "local_path": { "type": "string" },
+          "data_class": { "type": "string", "enum": ["measured_real", "analog", "synthetic"] },
+          "download_date": { "type": "string", "format": "date-time" },
+          "http_status": { "type": "integer" },
+          "file_size_bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "content_type": { "type": "string" },
+          "license": { "type": "string" },
+          "retries": { "type": "integer", "minimum": 0 },
+          "error": { "type": ["string", "null"] },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

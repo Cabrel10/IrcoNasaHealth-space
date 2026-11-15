@@ -1,0 +1,10 @@
+[package]
+name = "irco-health"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+irco-core = { path = "../irco-core" }
+irco-data = { path = "../irco-data" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }

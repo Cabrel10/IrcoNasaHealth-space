@@ -1,0 +1,11 @@
+[server]
+host = "0.0.0.0"
+port = 3080
+log_level = "info"
+
+[database]
+path = "data/irco.db"
+
+[limits]
+max_observations_per_query = 10000
+max_export_rows = 50000

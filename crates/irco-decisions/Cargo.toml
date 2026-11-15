@@ -1,0 +1,11 @@
+[package]
+name = "irco-decisions"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+irco-core = { path = "../irco-core" }
+irco-data = { path = "../irco-data" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

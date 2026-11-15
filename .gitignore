@@ -1,0 +1,11 @@
+/target/
+/data/raw/*
+!/data/raw/.gitkeep
+/data/normalized/*
+!/data/normalized/.gitkeep
+/data/irco.db
+*.pyc
+__pycache__/
+.env
+*.swp
+*.swo
