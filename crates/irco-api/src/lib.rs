@@ -262,6 +262,32 @@ impl AppState {
         }
         Ok(())
     }
+
+    fn active_colab_endpoint(&self) -> Result<Option<(String, String, String)>, ApiError> {
+        let mut session = self.colab_session.lock().map_err(|_| {
+            api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "colab_registry_unavailable",
+                "The Colab registry is unavailable",
+                "Retry the assistant request.",
+            )
+        })?;
+        let Some(current) = session.as_ref() else {
+            return Ok(None);
+        };
+        if current.last_heartbeat.elapsed() >= self.colab_ttl {
+            *session = None;
+            return Ok(None);
+        }
+        if !current.capabilities.chat {
+            return Ok(None);
+        }
+        Ok(Some((
+            current.api_base.clone(),
+            current.api_key.clone(),
+            current.model.clone(),
+        )))
+    }
 }
 
 impl AppState {
@@ -526,6 +552,8 @@ struct AssistantRequest {
     question: String,
     hazard: Option<String>,
     indicator: Option<String>,
+    subject_id: Option<String>,
+    data_class: Option<String>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -836,6 +864,14 @@ fn validate_colab_api_base(api_base: &str) -> Result<String, ApiError> {
         ));
     }
     let path = url.path().trim_end_matches('/');
+    if path.contains("/v1/") || path.ends_with("/chat/completions") {
+        return Err(api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_colab_api_base",
+            "The Colab URL must be an API base, not a chat completion endpoint",
+            "Provide the HTTPS API base URL, optionally ending in /v1.",
+        ));
+    }
     if path.is_empty() {
         url.set_path("/v1");
     } else if !path.ends_with("/v1") {
@@ -2127,6 +2163,31 @@ async fn assistant(
             "Shorten the question and retry.",
         ));
     }
+    if request.subject_id.is_some() != request.data_class.is_some()
+        || request
+            .subject_id
+            .as_deref()
+            .is_some_and(|subject_id| subject_id.trim().is_empty() || subject_id.len() > 200)
+    {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_health_context",
+            "subject_id and data_class must be provided together",
+            "Provide a non-empty subject_id and data_class=measured_real, analog, or synthetic.",
+        ));
+    }
+    if request
+        .data_class
+        .as_deref()
+        .is_some_and(|data_class| !matches!(data_class, "measured_real" | "analog" | "synthetic"))
+    {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_data_class",
+            "data_class must be measured_real, analog, or synthetic",
+            "Choose one of the three supported data classes.",
+        ));
+    }
     let hits = state
         .knowledge
         .as_ref()
@@ -2142,9 +2203,50 @@ async fn assistant(
             )
         });
     let hits = irco_ai::relevant_hits(&hits);
-    let answer = match irco_ai::answer_with_colab(&request.question, &hits).await {
-        Some(answer) => answer,
-        None => compose_answer(&hits),
+    if hits.is_empty() {
+        return Ok(Json(compose_answer(&hits)));
+    }
+    let answer = if let Some((api_base, api_key, model)) = state.active_colab_endpoint()? {
+        let health_context = if let (Some(subject_id), Some(data_class)) =
+            (request.subject_id.as_deref(), request.data_class.as_deref())
+        {
+            let Json(snapshot) = health_state(
+                State(state.clone()),
+                Path(subject_id.to_owned()),
+                Ok(Query(StateQuery {
+                    data_class: Some(data_class.to_owned()),
+                    as_of: None,
+                })),
+            )
+            .await?;
+            Some(
+                json!({
+                    "subject_id": snapshot.subject_id,
+                    "data_class": snapshot.data_class,
+                    "as_of": snapshot.as_of,
+                    "vigilance": snapshot.vigilance,
+                    "supported_vigilance": snapshot.supported_vigilance,
+                    "indicators": snapshot.indicators,
+                    "missing_indicators": snapshot.missing_indicators,
+                    "triggered_rules": snapshot.triggered_rules,
+                })
+                .to_string(),
+            )
+        } else {
+            None
+        };
+        irco_ai::answer_with_colab(
+            &api_base,
+            &api_key,
+            &model,
+            &request.question,
+            health_context.as_deref(),
+            &hits,
+        )
+        .await
+        .unwrap_or_else(|| compose_answer(&hits))
+    } else {
+        compose_answer(&hits)
     };
     Ok(Json(answer))
 }
@@ -2221,7 +2323,10 @@ fn api_error(status: StatusCode, code: &str, error: &str, hint: &str) -> ApiErro
 
 #[cfg(test)]
 mod tests {
-    use super::{router, AppState, IndicatorEntry, IndicatorRegistry, Observation};
+    use super::{
+        router, AppState, ColabCapabilities, ColabSession, IndicatorEntry, IndicatorRegistry,
+        Observation,
+    };
     use axum::{
         body::Body,
         http::{header, Request, StatusCode},
@@ -2234,7 +2339,7 @@ mod tests {
     use irco_knowledge::{CorpusEntry, EvidenceKind, KnowledgeBase};
     use rusqlite::Connection;
     use serde_json::Value;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tower::ServiceExt;
 
     fn test_app(token: Option<String>) -> axum::Router {
@@ -3388,6 +3493,75 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Source not found"));
+    }
+
+    #[tokio::test]
+    async fn assistant_requires_health_context_fields_as_a_pair() {
+        let response = test_app(None)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/assistant/chat")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "question": "Explain the evidence",
+                            "subject_id": "crew-01"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let error: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(error["code"], "invalid_health_context");
+    }
+
+    #[test]
+    fn assistant_uses_only_an_unexpired_registered_chat_session() {
+        let database = Connection::open_in_memory().unwrap();
+        let mut state = AppState::new(
+            database,
+            RulesDocument {
+                version: "test".to_owned(),
+                rules: Vec::new(),
+            },
+            None,
+        );
+        *state.colab_session.lock().unwrap() = Some(ColabSession {
+            session_id: "session-01".to_owned(),
+            heartbeat_token: "private-token".to_owned(),
+            api_base: "https://colab.example.test/v1".to_owned(),
+            api_key: "private-key".to_owned(),
+            model: "qwen-test".to_owned(),
+            capabilities: ColabCapabilities {
+                chat: true,
+                asr: false,
+                tts: false,
+                vision: false,
+                vlm: false,
+                image: false,
+                multi: false,
+                streaming: false,
+            },
+            last_heartbeat: Instant::now(),
+        });
+        assert_eq!(
+            state.active_colab_endpoint().map_err(|_| ()).unwrap(),
+            Some((
+                "https://colab.example.test/v1".to_owned(),
+                "private-key".to_owned(),
+                "qwen-test".to_owned(),
+            ))
+        );
+        state.colab_ttl = Duration::ZERO;
+        assert_eq!(state.active_colab_endpoint().map_err(|_| ()).unwrap(), None);
+        assert!(state.colab_session.lock().unwrap().is_none());
     }
 
     #[tokio::test]

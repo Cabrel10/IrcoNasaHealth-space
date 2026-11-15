@@ -1,24 +1,17 @@
 # Colab runtime integration
 
-The VPS Colab runtime updates the aichat configuration after each notebook
-heartbeat. IRCO reads that file for each assistant request, so a refreshed
-Cloudflare URL or model name takes effect without restarting the API.
-
-By default, IRCO reads `~/.config/aichat/config.yaml`. Set
-`COLAB_AICHAT_CONFIG` if the API runs under another account or the file is
-mounted elsewhere. For a container, mount the configuration read-only and
-restrict access to the service account; the file contains the upstream API key.
-
-The configured aichat client must be named `local` and use the
-`openai-compatible` type, with `api_base`, `api_key`, and a model name. IRCO
-appends `/v1/chat/completions` when needed. It rereads this configuration on
-every assistant request.
+The assistant uses the active, unexpired runtime session in IRCO's Colab
+registry. Registration and heartbeat updates immediately affect subsequent
+assistant requests; the API does not read aichat configuration files.
 
 The assistant sends at most five BM25 hits with scores of at least `0.25` to
 Colab, waits at most eight seconds, and accepts only answers that cite known
-`[S1]`-style sources. With no relevant evidence, invalid citations, or a relay
-failure, it uses the local extractive answer. The model cannot change
-observations, rules, alerts, or vigilance.
+`[S1]`-style sources. It sends current deterministic health state only when a
+request explicitly includes both `subject_id` and `data_class`; that context is
+included in the outbound request only when an active runtime is registered,
+is read-only, and is kept separate from source citations. With no relevant
+evidence, invalid citations, or a relay failure, it uses the local extractive
+answer. The model cannot change observations, rules, alerts, or vigilance.
 
 The current VPS notebook exposes OpenAI-compatible chat completions only. It
 does not expose compatible audio or image endpoints, so IRCO does not advertise

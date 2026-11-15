@@ -112,12 +112,13 @@ curl http://localhost:3080/health
 | `IRCO_COLAB_ADMIN_TOKEN` | Separate bearer token required to register or revoke Colab; registration is disabled when absent |
 | `IRCO_COLAB_TTL_SECONDS` | Colab heartbeat expiry window in seconds (30–3600, default 180) |
 | `IRCO_CORPUS_PATH` | Overrides the default knowledge corpus location (`data/corpus.jsonl`) |
-| `COLAB_AICHAT_CONFIG` | Optional path to the live aichat config updated by the Colab heartbeat |
 
-The assistant rereads the Colab config per request, uses only relevant
-scientific sources, and falls back locally when Colab is unavailable. The
-current VPS notebook supports text chat only; multimodal endpoints are not
-enabled. See [`colab/README.md`](colab/README.md).
+The assistant uses the current, unexpired Colab registry session and falls
+back locally when Colab is unavailable. It sends only relevant scientific
+sources; health state is sent only when explicitly requested with a subject ID
+and data class to an active registered runtime. The current VPS notebook
+supports text chat only; multimodal endpoints are not enabled. See
+[`colab/README.md`](colab/README.md).
 
 ## API Endpoints
 

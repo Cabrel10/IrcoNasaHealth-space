@@ -1133,7 +1133,7 @@
     "/api/v1/assistant/chat": {
       "post": {
         "operationId": "explainWithCitations",
-        "description": "Extractive evidence fallback; never sets vigilance and always states the decision-support disclaimer.",
+        "description": "Uses relevant corpus evidence with the active registered Colab runtime when available, otherwise returns a local extractive answer. Optional health context is read-only and never sets vigilance.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1154,6 +1154,19 @@
                   },
                   "indicator": {
                     "type": "string"
+                  },
+                  "subject_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "data_class": {
+                    "type": "string",
+                    "enum": [
+                      "measured_real",
+                      "analog",
+                      "synthetic"
+                    ]
                   }
                 }
               }
@@ -1199,7 +1212,7 @@
             }
           },
           "400": {
-            "description": "Invalid question.",
+            "description": "Invalid question, health-context pair, or data class.",
             "content": {
               "application/json": {
                 "schema": {

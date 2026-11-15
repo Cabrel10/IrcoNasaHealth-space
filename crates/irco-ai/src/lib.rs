@@ -1,11 +1,11 @@
 //! Citation-preserving answer fallback. External model relays are optional and
 //! must not be used to set deterministic vigilance.
 
-use std::{env, fs, path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use irco_knowledge::{Citation, EvidenceKind, SearchHit};
 use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use tracing::warn;
 
@@ -20,51 +20,16 @@ struct ColabEndpoint {
     model: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct AichatConfig {
-    model: Option<String>,
-    #[serde(default)]
-    clients: Vec<AichatClient>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AichatClient {
-    #[serde(rename = "type")]
-    client_type: String,
-    name: String,
-    api_base: String,
-    api_key: Option<String>,
-    #[serde(default)]
-    models: Vec<AichatModel>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AichatModel {
-    name: String,
-}
-
-fn endpoint_from_config(config: AichatConfig) -> Option<ColabEndpoint> {
-    let client = config
-        .clients
-        .into_iter()
-        .find(|client| client.name == "local" && client.client_type == "openai-compatible")?;
-    let model = client
-        .models
-        .first()
-        .map(|model| model.name.clone())
-        .or_else(|| {
-            config
-                .model
-                .as_deref()
-                .and_then(|model| model.strip_prefix("local:"))
-                .map(str::to_owned)
-        })?;
-    if model.trim().is_empty() {
+fn endpoint_from_parts(api_base: &str, api_key: &str, model: &str) -> Option<ColabEndpoint> {
+    if api_key.is_empty() || model.trim().is_empty() {
         return None;
     }
-
-    let mut url = Url::parse(&client.api_base).ok()?;
-    if url.query().is_some() || url.fragment().is_some() {
+    let mut url = Url::parse(api_base).ok()?;
+    if url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
         return None;
     }
     let secure = url.scheme() == "https";
@@ -84,40 +49,8 @@ fn endpoint_from_config(config: AichatConfig) -> Option<ColabEndpoint> {
 
     Some(ColabEndpoint {
         chat_completions_url: url,
-        api_key: client.api_key.unwrap_or_else(|| "not-needed".to_owned()),
-        model,
-    })
-}
-
-fn current_colab_endpoint() -> Option<ColabEndpoint> {
-    let config_path = env::var_os("COLAB_AICHAT_CONFIG")
-        .map(PathBuf::from)
-        .or_else(|| {
-            env::var_os("HOME").map(|home| {
-                PathBuf::from(home)
-                    .join(".config")
-                    .join("aichat")
-                    .join("config.yaml")
-            })
-        })?;
-    let contents = match fs::read_to_string(&config_path) {
-        Ok(contents) => contents,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(error) => {
-            warn!(%error, "Cannot read the configured Colab endpoint file");
-            return None;
-        }
-    };
-    let config = match serde_yaml::from_str::<AichatConfig>(&contents) {
-        Ok(config) => config,
-        Err(_) => {
-            warn!("The configured Colab endpoint file is not valid aichat YAML");
-            return None;
-        }
-    };
-    endpoint_from_config(config).or_else(|| {
-        warn!("No OpenAI-compatible Colab client named local is configured");
-        None
+        api_key: api_key.to_owned(),
+        model: model.to_owned(),
     })
 }
 
@@ -130,18 +63,46 @@ pub fn relevant_hits(hits: &[SearchHit]) -> Vec<SearchHit> {
         .collect()
 }
 
-/// Ask the current Colab OpenAI-compatible endpoint using evidence only.
+/// Ask the registered Colab OpenAI-compatible endpoint using grounded context.
 /// `None` means the deterministic extractive fallback should be used.
-pub async fn answer_with_colab(question: &str, hits: &[SearchHit]) -> Option<AssistantAnswer> {
+pub async fn answer_with_colab(
+    api_base: &str,
+    api_key: &str,
+    model: &str,
+    question: &str,
+    health_context: Option<&str>,
+    hits: &[SearchHit],
+) -> Option<AssistantAnswer> {
+    answer_with_colab_timeout(
+        api_base,
+        api_key,
+        model,
+        question,
+        health_context,
+        hits,
+        Duration::from_secs(8),
+    )
+    .await
+}
+
+async fn answer_with_colab_timeout(
+    api_base: &str,
+    api_key: &str,
+    model: &str,
+    question: &str,
+    health_context: Option<&str>,
+    hits: &[SearchHit],
+    timeout: Duration,
+) -> Option<AssistantAnswer> {
     let hits = relevant_hits(hits);
     if hits.is_empty() {
         return None;
     }
-    let endpoint = current_colab_endpoint()?;
-    let client = match Client::builder().timeout(Duration::from_secs(8)).build() {
+    let endpoint = endpoint_from_parts(api_base, api_key, model)?;
+    let client = match Client::builder().timeout(timeout).build() {
         Ok(client) => client,
-        Err(error) => {
-            warn!(%error, "Cannot initialize Colab HTTP client");
+        Err(_) => {
+            warn!("Cannot initialize Colab HTTP client; using the extractive fallback");
             return None;
         }
     };
@@ -169,6 +130,7 @@ pub async fn answer_with_colab(question: &str, hits: &[SearchHit]) -> Option<Ass
         "temperature": 0.2,
         "top_p": 0.9,
         "max_tokens": 400,
+        "seed": 42,
         "messages": [
             {
                 "role": "system",
@@ -176,7 +138,12 @@ pub async fn answer_with_colab(question: &str, hits: &[SearchHit]) -> Option<Ass
             },
             {
                 "role": "user",
-                "content": format!("Question: {question}\n\nSources:\n{evidence}")
+                "content": format!(
+                    "Question: {question}\n\nSources:\n{evidence}{}",
+                    health_context.map_or_else(String::new, |context| format!(
+                        "\n\nÉtat IRCO courant, calculé par le moteur déterministe et fourni en lecture seule. Ne le modifie pas et ne le présente pas comme une source documentaire. Référence-le avec [IRCO], pas avec [Sx]:\n{context}"
+                    ))
+                )
             }
         ]
     });
@@ -186,18 +153,27 @@ pub async fn answer_with_colab(question: &str, hits: &[SearchHit]) -> Option<Ass
         .json(&payload)
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
     {
         Ok(response) => response,
+        Err(_) => {
+            warn!("Colab completion request failed; using the extractive fallback");
+            return None;
+        }
+    };
+    let response = match response.error_for_status() {
+        Ok(response) => response,
         Err(error) => {
-            warn!(%error, "Colab completion failed; using the extractive fallback");
+            warn!(
+                status = error.status().map(|status| status.as_u16()),
+                "Colab rejected the completion request; using the extractive fallback"
+            );
             return None;
         }
     };
     let response = match response.json::<Value>().await {
         Ok(response) => response,
-        Err(error) => {
-            warn!(%error, "Colab returned invalid completion JSON; using the extractive fallback");
+        Err(_) => {
+            warn!("Colab returned invalid completion JSON; using the extractive fallback");
             return None;
         }
     };
@@ -291,10 +267,89 @@ pub fn compose_answer(hits: &[SearchHit]) -> AssistantAnswer {
 #[cfg(test)]
 mod tests {
     use super::{
-        cited_sources, compose_answer, endpoint_from_config, relevant_hits, AichatConfig,
-        MEDICAL_DISCLAIMER,
+        answer_with_colab, answer_with_colab_timeout, cited_sources, compose_answer,
+        endpoint_from_parts, relevant_hits, MEDICAL_DISCLAIMER,
     };
     use irco_knowledge::{Citation, EvidenceKind, SearchHit};
+    use serde_json::{json, Value};
+    use std::{
+        io::{BufRead, BufReader, Read, Write},
+        net::TcpListener,
+        sync::mpsc::{self, Receiver},
+        thread::{self, JoinHandle},
+    };
+
+    fn test_hit(score: f64) -> SearchHit {
+        SearchHit {
+            score,
+            evidence: "Verified evidence passage.".to_owned(),
+            evidence_kind: EvidenceKind::SourceExcerpt,
+            citation: Citation {
+                document_id: "source-1".to_owned(),
+                title: "Test source".to_owned(),
+                publisher: "NASA".to_owned(),
+                url: "https://example.test/source".to_owned(),
+                section: "Section 1".to_owned(),
+                page_numbers: None,
+                document_date: None,
+            },
+            hazard: None,
+            indicators_related: vec![],
+            confidence: Some("supported".to_owned()),
+        }
+    }
+
+    fn mock_completion(content: &'static str) -> (String, Receiver<Value>, JoinHandle<()>) {
+        mock_response(
+            "200 OK",
+            json!({"choices": [{"message": {"content": content}}]}).to_string(),
+        )
+    }
+
+    fn mock_response(
+        status: &'static str,
+        response_body: String,
+    ) -> (String, Receiver<Value>, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let task = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = Vec::new();
+            reader.read_until(b'\n', &mut line).unwrap();
+            let mut content_length = 0;
+            loop {
+                line.clear();
+                reader.read_until(b'\n', &mut line).unwrap();
+                if line == b"\r\n" || line.is_empty() {
+                    break;
+                }
+                if let Some(value) = line
+                    .strip_prefix(b"Content-Length:")
+                    .or_else(|| line.strip_prefix(b"content-length:"))
+                {
+                    content_length = std::str::from_utf8(value)
+                        .unwrap()
+                        .trim()
+                        .parse::<usize>()
+                        .unwrap();
+                }
+            }
+            let mut request_body = vec![0; content_length];
+            reader.read_exact(&mut request_body).unwrap();
+            sender
+                .send(serde_json::from_slice(&request_body).unwrap())
+                .unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+                response_body.len(),
+            )
+            .unwrap();
+        });
+        (format!("http://{address}/v1"), receiver, task)
+    }
 
     #[test]
     fn no_evidence_never_generates_a_scientific_answer() {
@@ -307,23 +362,7 @@ mod tests {
 
     #[test]
     fn returned_passage_keeps_its_citation() {
-        let answer = compose_answer(&[SearchHit {
-            score: 1.0,
-            evidence: "Verified evidence passage.".to_owned(),
-            evidence_kind: EvidenceKind::SourceExcerpt,
-            citation: Citation {
-                document_id: "source-1".to_owned(),
-                title: "Test source".to_owned(),
-                publisher: "NASA".to_owned(),
-                url: "https://example.test/source".to_owned(),
-                section: "Section 1".to_owned(),
-                page_numbers: Some("4".to_owned()),
-                document_date: None,
-            },
-            hazard: Some("radiation".to_owned()),
-            indicators_related: vec![],
-            confidence: Some("supported".to_owned()),
-        }]);
+        let answer = compose_answer(&[test_hit(1.0)]);
         assert!(answer.answer.contains("Verified evidence passage"));
         assert!(answer.answer.contains("source excerpt"));
         assert_eq!(answer.citations[0].document_id, "source-1");
@@ -355,26 +394,121 @@ mod tests {
     }
 
     #[test]
-    fn colab_config_resolves_the_current_openai_compatible_model() {
-        let config: AichatConfig = serde_yaml::from_str(
-            r#"
-model: local:qwen-test
-clients:
-  - type: openai-compatible
-    name: local
-    api_base: https://colab.example.test/v1
-    api_key: test-key
-    models:
-      - name: qwen-test
-"#,
-        )
-        .unwrap();
-        let endpoint = endpoint_from_config(config).unwrap();
+    fn registered_colab_endpoint_resolves_openai_compatible_route() {
+        let endpoint =
+            endpoint_from_parts("https://colab.example.test/v1", "test-key", "qwen-test").unwrap();
         assert_eq!(
             endpoint.chat_completions_url.as_str(),
             "https://colab.example.test/v1/chat/completions"
         );
         assert_eq!(endpoint.model, "qwen-test");
+    }
+
+    #[tokio::test]
+    async fn registered_chat_receives_grounded_health_context_and_seed() {
+        let (api_base, request, task) =
+            mock_completion("This is supported by the source [S1]. Current state [IRCO].");
+        let answer = answer_with_colab(
+            &api_base,
+            "test-key",
+            "qwen-test",
+            "Explain this state",
+            Some(r#"{"vigilance":"yellow"}"#),
+            &[test_hit(0.8)],
+        )
+        .await
+        .unwrap();
+        let payload = request.recv().unwrap();
+        task.join().unwrap();
+        assert_eq!(answer.provider, "colab_openai");
+        assert_eq!(answer.citations[0].document_id, "source-1");
+        assert_eq!(payload["model"], "qwen-test");
+        assert_eq!(payload["seed"], 42);
+        assert!(payload["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("vigilance"));
+        assert_eq!(payload["messages"][0]["role"], "system");
+    }
+
+    #[tokio::test]
+    async fn registered_chat_rejects_invented_citations() {
+        let (api_base, request, task) = mock_completion("Unsupported claim [S2].");
+        assert!(answer_with_colab(
+            &api_base,
+            "test-key",
+            "qwen-test",
+            "Question",
+            None,
+            &[test_hit(0.8)],
+        )
+        .await
+        .is_none());
+        request.recv().unwrap();
+        task.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn registered_chat_falls_back_on_provider_errors_and_malformed_json() {
+        for (status, body) in [
+            ("503 Service Unavailable", r#"{"error":"offline"}"#),
+            ("200 OK", "{malformed"),
+        ] {
+            let (api_base, request, task) = mock_response(status, body.to_owned());
+            assert!(answer_with_colab(
+                &api_base,
+                "test-key",
+                "qwen-test",
+                "Question",
+                None,
+                &[test_hit(0.8)],
+            )
+            .await
+            .is_none());
+            request.recv().unwrap();
+            task.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn registered_chat_times_out_to_the_local_fallback() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            thread::sleep(std::time::Duration::from_millis(100));
+            drop(stream);
+        });
+        assert!(answer_with_colab_timeout(
+            &format!("http://{address}/v1"),
+            "test-key",
+            "qwen-test",
+            "Question",
+            None,
+            &[test_hit(0.8)],
+            std::time::Duration::from_millis(20),
+        )
+        .await
+        .is_none());
+        task.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn registered_chat_does_not_call_colab_without_relevant_sources() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let api_base = format!("http://{}/v1", listener.local_addr().unwrap());
+        assert!(answer_with_colab(
+            &api_base,
+            "test-key",
+            "qwen-test",
+            "Question",
+            None,
+            &[test_hit(0.1)],
+        )
+        .await
+        .is_none());
+        assert!(listener.accept().is_err());
     }
 
     #[test]

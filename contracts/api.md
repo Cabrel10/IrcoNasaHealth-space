@@ -576,17 +576,27 @@ and `GET /api/v1/knowledge/search` in the current API.
 
 ### `POST /api/v1/assistant/chat`
 
-Ask the offline extractive assistant to find and cite relevant corpus evidence.
-It does not receive personal health state, call an LLM, or modify vigilance.
+Find and cite relevant corpus evidence. When an active Colab chat session is
+registered, relevant evidence may be sent to that OpenAI-compatible runtime;
+otherwise the local extractive answer is used. Current health state is included
+only when explicitly requested with both `subject_id` and `data_class`. The
+assistant never modifies observations, rules, alerts, or vigilance.
 
 **Request:**
 ```json
 {
   "question": "What does NASA say about radiation?",
   "hazard": "radiation",
-  "indicator": "radiation_dose_daily"
+  "indicator": "radiation_dose_daily",
+  "subject_id": "crew-01",
+  "data_class": "synthetic"
 }
 ```
+
+`subject_id` and `data_class` must be supplied together. If present, the
+deterministic state summary is sent to an active registered Colab runtime
+alongside the retrieved evidence. It is not included in the local extractive
+answer.
 
 **Response 200:**
 ```json

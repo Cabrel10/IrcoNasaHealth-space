@@ -546,7 +546,7 @@ paths:
   /api/v1/assistant/chat:
     post:
       operationId: explainWithCitations
-      description: Extractive evidence fallback; never sets vigilance and always states the decision-support disclaimer.
+      description: Uses relevant corpus evidence with the active registered Colab runtime when available, otherwise returns a local extractive answer. Optional health context is read-only and never sets vigilance.
       requestBody:
         required: true
         content:
@@ -558,6 +558,10 @@ paths:
                 question: { type: string, minLength: 1, maxLength: 2000 }
                 hazard: { type: string }
                 indicator: { type: string }
+                subject_id: { type: string, minLength: 1, maxLength: 200 }
+                data_class:
+                  type: string
+                  enum: [measured_real, analog, synthetic]
       responses:
         "200":
           description: A citation-backed passage or explicit source-not-found answer.
@@ -575,7 +579,7 @@ paths:
                   disclaimer: { type: string }
                   provider: { type: string }
         "400":
-          description: Invalid question.
+          description: Invalid question, health-context pair, or data class.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
