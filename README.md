@@ -94,19 +94,38 @@ logged or committed).
   when the request explicitly carries `subject_id` and `data_class`; that
   context is read-only and kept separate from the source citations.
 
-**The advantage:** mission-grade explanation on demand with **zero
-infrastructure cost** — the notebook borrows a free GPU, connects through the
-existing heartbeat registry (no new session, no tunnel management in IRCO),
-and if it is asleep or unreachable, **nothing breaks**: the assistant
-automatically answers with the local cited extracts and the monitoring
-pipeline continues untouched (`/health` reports `ai_available: false`,
-`knowledge_available: true` — exactly what a deployed demo shows).
+**Measured on the notebook** (our interaction tests, November 2026):
+
+| Capability | Measured | Value for a crew member |
+|---|---|---|
+| Natural-language chat | first token 0.2 s, full answer 6.4 s | Ask freely: "why is my sleep being counted?" — corpus-grounded answer in plain language |
+| Speech → text (Whisper) | 0.9 s round trip | Dictate a symptom with occupied hands |
+| Text → speech (MMS-TTS) | 140 KB audio in 0.1 s | Receive an instruction out loud |
+| Full voice pipeline (`/v1/multi`) | first audio sentence at 1.9 s | Spoken dialogue end-to-end |
+| Image description (SmolVLM) | 6.9 s | Describe a photo (a rash, equipment) as an *observation to confirm* |
+
+The notebook provides these capabilities; IRCO currently relays **text
+chat** through the API, and audio/vision will be wired into the API only
+when the notebook exposes documented, compatible endpoints.
+
+**The advantage:** mission-grade explanation with **zero infrastructure
+cost** — and a decisive architecture property. Colab is our **test bench**
+for the onboard AI: it demonstrates that a multimodal assistant fits in
+**less than 20 GB of unified memory**. In a real mission the same role is
+held by a compact quantized model running locally on the onboard computer —
+not by a cloud notebook. IRCO's design makes this swap trivial: the
+health engine is independent of the AI, which sits behind a standard
+OpenAI-compatible interface. **The AI is therefore not optional in a real
+mission — it is local and interchangeable; what is truly non-optional is
+the deterministic engine, which keeps working when everything else fails**
+(`/health` reports `ai_available: false`, `knowledge_available: true`).
 
 **The boundary:** the model cannot create observations, modify rules, raise
 alerts, or change the vigilance level — there is no route from the notebook
-to the decision engine. Currently only **text chat** is relayed (the
-notebook's OpenAI-compatible chat endpoint); audio and vision adapters will
-be enabled only after the notebook exposes documented, compatible endpoints.
+to the decision engine. We do **not** claim that Colab "works in space" or
+that image description is a diagnosis: it produces observations to confirm,
+never medical conclusions.
+
 
 ## Key Features
 
