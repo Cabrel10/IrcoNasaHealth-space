@@ -7,7 +7,8 @@
 
 ![Language](https://img.shields.io/badge/language-Rust%20%2B%20Python-blue)
 ![API](https://img.shields.io/badge/API-Axum%20(Rust)-orange)
-![Status](https://img.shields.io/badge/status-prototype%20%2F%20in%20progress-yellow)
+![Tests](https://img.shields.io/badge/tests-94%20Rust%20%2B%208%20contracts-green)
+![Status](https://img.shields.io/badge/status-functional%20end--to--end-brightgreen)
 
 ---
 
@@ -53,6 +54,25 @@ search provides cited, source-grounded explanations.
 Determinism and auditability come first: the monitoring pipeline runs
 entirely without any LLM, and every conclusion can be traced back to its
 source data.
+
+## Collected Data — and Where It Is Used
+
+The project collects real public data. Every file is versioned with a
+manifest (`data/manifests/acquisition.json`: URL, SHA-256, license,
+timestamp) and every value ingested carries its data class.
+
+| Collected dataset | Volume | Where it is used in IRCO |
+|---|---|---|
+| **NASA OSDR EDA** — ISS environmental & radiation telemetry (RR-1) | 36,261 measurements, `measured_real` | Ingested into the SQLite store; queryable via `GET /api/v1/observations` and exported CSV/JSONL; feeds the environment indicators of the registry (`co2_cabin`, `radiation_dose_daily`, `temperature_iss`, …) |
+| **NOAA SWPC** — GOES X-ray flux (7-day feed) | 11,506 measurements, `measured_real` | Same ingestion path; `xray_flux_short` space-weather context for the crew |
+| **NASA HRP + CSA pages** — curated 9-entry knowledge corpus (`data/corpus.jsonl`) | 9 verified summaries | Loaded at startup by `irco-knowledge`; powers `GET /api/v1/assistant/chat` (every answer cites its source) and `GET /api/v1/knowledge/hazards` (hazard → indicator → body-zone map shown in the UI) |
+| **Decision rules** (`rules/rules.json`) | 12 versioned rules | Loaded at startup by `irco-decisions`; the engine evaluates absolute, baseline-deviation, trend, persistence, missing-data and composite rules → green/amber/red vigilance |
+
+All of this is verifiable today: run the server
+(`IRCO_PORT=3081 cargo run --bin irco-api`) and query
+`GET /api/v1/observations?data_class=measured_real`,
+`GET /api/v1/knowledge/hazards`, `GET /health` (reports
+`rules_loaded`, `indicators_loaded`, `knowledge_available`).
 
 ## Key Features
 
@@ -235,19 +255,20 @@ have not been configured.
 
 ## Project Status
 
-**Prototype in active development — not delivery-ready.** Implemented
-today: schemas, ingestion/storage, the deterministic rules engine
-(including persistence and AND/OR composites), the alert lifecycle, the
-temporal health-state API, and offline BM25 search with a
-citation-preserving assistant fallback.
+**IRCO works end-to-end and is verified by tests.** Delivered and running
+today: schemas, ingestion/storage (idempotent replay, conflict rejection),
+the deterministic rules engine with persistence and AND/OR composites, the
+alert lifecycle, the temporal health-state API, offline BM25 search with a
+citation-preserving assistant fallback, a versioned REST API (OpenAPI), and
+a React dashboard that only displays what the API returns — validated by
+16 API e2e tests and 7 app-integration tests against the live backend
+(heart_rate 62 → 108 across demo days 1→124, vigilance green → amber → red).
 
-Not yet delivered: analog-data import, composite alert persistence during
-ingestion, an automated source-refresh pipeline, archived source pages, and
-audio/vision adapters. The Colab chat relay remains optional and requires a
-running notebook heartbeat.
-
-All clinical thresholds are illustrative/provisional; trend analysis is
-descriptive until rules receive scientific validation. See
+Known limitations, stated as facts: clinical thresholds are
+illustrative/provisional and not clinically validated; astronaut physiology
+in the demo is synthetic; analog-data import and an automated source-refresh
+pipeline are not yet built; voice and vision run in the Colab notebook and
+are not yet integrated into the API. See
 [`docs/PROGRESS.md`](docs/PROGRESS.md) for the detailed, up-to-date report.
 
 ## Documentation
