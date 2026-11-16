@@ -74,6 +74,40 @@ All of this is verifiable today: run the server
 `GET /api/v1/knowledge/hazards`, `GET /health` (reports
 `rules_loaded`, `indicators_loaded`, `knowledge_available`).
 
+## The Colab AI Engine — What It Does and Why
+
+The AI layer is **optional and strictly subordinate** to the deterministic
+engine. It runs in a Google Colab GPU notebook (see
+[the notebook](https://colab.research.google.com/drive/1S_t90rrS8T5woWzmkcaEBzVquNpItbWp))
+that keeps a heartbeat alive on the VPS; the backend reads the fresh tunnel
+URL from that heartbeat registry (token sent only to the registry, never
+logged or committed).
+
+**What it does today (verified by unit tests and the live API):**
+
+- When a crew member asks a question via `POST /api/v1/assistant/chat`, the
+  backend sends **at most 5 BM25 excerpts** from the NASA/CSA corpus (score
+  ≥ 0.25) to the notebook, waits **at most 15 seconds**, and accepts only
+  answers that **cite the known `[S1]`-style sources**. Invented citations
+  are rejected and the request falls back to the local extractive answer.
+- The notebook may receive the **current deterministic health state** only
+  when the request explicitly carries `subject_id` and `data_class`; that
+  context is read-only and kept separate from the source citations.
+
+**The advantage:** mission-grade explanation on demand with **zero
+infrastructure cost** — the notebook borrows a free GPU, connects through the
+existing heartbeat registry (no new session, no tunnel management in IRCO),
+and if it is asleep or unreachable, **nothing breaks**: the assistant
+automatically answers with the local cited extracts and the monitoring
+pipeline continues untouched (`/health` reports `ai_available: false`,
+`knowledge_available: true` — exactly what a deployed demo shows).
+
+**The boundary:** the model cannot create observations, modify rules, raise
+alerts, or change the vigilance level — there is no route from the notebook
+to the decision engine. Currently only **text chat** is relayed (the
+notebook's OpenAI-compatible chat endpoint); audio and vision adapters will
+be enabled only after the notebook exposes documented, compatible endpoints.
+
 ## Key Features
 
 - **Ingestion & storage** — SQLite observation store with idempotent exact
