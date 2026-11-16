@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import earthBg from '@/assets/backgrounds/earth-orbit-bg.jpg';
 import miniGlobeImg from '@/assets/illustrations/globe-orbit-mini.png';
+import { useReducedMotion } from '@/hooks/useChrono';
 
 interface MiniGlobeProps {
   className?: string;
@@ -9,21 +10,23 @@ interface MiniGlobeProps {
 }
 
 export const MiniGlobe: React.FC<MiniGlobeProps> = ({ className = '', size = 72 }) => {
+  const reducedMotion = useReducedMotion();
+
   return (
-    <div className={`relative flex items-center gap-3 select-none ${className}`}>
+    <div className={`relative flex items-center gap-3 select-none ${className}`} aria-label="Earth illustration; mission trajectory unavailable">
       {/* Outer orbit container */}
       <div 
         className="relative flex items-center justify-center"
         style={{ width: size, height: size }}
       >
         {/* Orbital Track ring */}
-        <div className="absolute inset-[-6px] rounded-full border border-[#00CFFF]/20 border-dashed animate-[spin_40s_linear_infinite]" />
+        <div className={`absolute inset-[-6px] rounded-full border border-[#00CFFF]/20 border-dashed ${reducedMotion ? '' : 'animate-[spin_40s_linear_infinite]'}`} />
         
         {/* Orbiting Satellite Dot */}
-        <motion.div 
+        <motion.div
           className="absolute inset-[-10px] pointer-events-none"
-          animate={{ rotate: 360 }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
+          animate={reducedMotion ? { rotate: 0 } : { rotate: 360 }}
+          transition={{ duration: 12, repeat: reducedMotion ? 0 : Infinity, ease: 'linear' }}
         >
           <div className="w-2 h-2 rounded-full bg-[#00CFFF] shadow-[0_0_8px_#00CFFF] relative top-0 left-1/2 -translate-x-1/2" />
         </motion.div>
@@ -53,10 +56,10 @@ export const MiniGlobe: React.FC<MiniGlobeProps> = ({ className = '', size = 72 
       {/* Orbit Tag text */}
       <div className="flex flex-col">
         <span className="text-[10px] font-mono tracking-widest text-[#00CFFF] uppercase font-semibold drop-shadow-[0_0_6px_rgba(0,207,255,0.6)]">
-          ISS-ORBIT
+          TERRE · ILLUSTRATION
         </span>
         <span className="text-[11px] font-mono text-[#94b0d1]">
-          ~420 km · 7.66 km/s
+          Trajectoire: UNAVAILABLE
         </span>
       </div>
     </div>

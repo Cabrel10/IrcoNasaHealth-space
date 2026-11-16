@@ -9,3 +9,7 @@ __pycache__/
 .env
 *.swp
 *.swo
+# Documentation interne
+frontdev.md
+frontend/CORRECTIONS_FINALES.md
+frontend/test-results/*.png

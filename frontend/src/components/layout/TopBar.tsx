@@ -2,16 +2,20 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, Clock, Satellite, Wifi, ChevronDown, Bell, ShieldAlert } from 'lucide-react';
 import { useMissionStore } from '@/stores/useMissionStore';
-import { useChrono } from '@/hooks/useChrono';
+import {
+  dataClassLabel,
+  dataClassVariant,
+} from '@/services/dashboardValues';
+import { StatusPill } from '@/components/ui/StatusPill';
 
 export const TopBar: React.FC = () => {
   const {
     missionName,
     activeNavId,
     dashboard,
+    dashboardStatus,
   } = useMissionStore();
 
-  const { tPlus, met } = useChrono();
   const [alertOpen, setAlertOpen] = useState(false);
 
   const isCrewView = activeNavId === 'crew-health';
@@ -69,17 +73,15 @@ export const TopBar: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="flex items-center gap-3 overflow-hidden"
             >
-              {/* Mission Pill */}
+              {/* Mission identity and data class from the API */}
               <div className="flex items-center gap-2.5 rounded-full px-4 py-1.5 bg-[#081A30]/75 border border-[#00CFFF]/30 shadow-[inset_0_0_12px_rgba(0,207,255,0.15)]">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22C55E] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22C55E] shadow-[0_0_8px_#22C55E]" />
-                </span>
                 <span className="text-[13px] font-medium text-white">{missionName}</span>
                 <span className="h-3.5 w-px bg-[#00CFFF]/30" />
-                <span className="text-[12px] font-semibold text-[#22C55E] uppercase font-mono tracking-wider">
-                  Active
-                </span>
+                <StatusPill
+                  label={dataClassLabel(dashboard?.data_class)}
+                  variant={dataClassVariant(dashboard?.data_class)}
+                  showDot={false}
+                />
               </div>
 
               {/* Subject Pill (single-subject demo from the API) */}
@@ -88,11 +90,11 @@ export const TopBar: React.FC = () => {
                 <span className="text-[13px] font-medium text-white">Sujet {subjectId}</span>
               </div>
 
-              {/* T+ Live Chrono Pill */}
+              {/* Mission day from the API; elapsed mission time is not in this contract. */}
               <div className="flex items-center gap-2 rounded-full px-4 py-1.5 bg-[#081A30]/75 border border-[#00CFFF]/30 shadow-[inset_0_0_12px_rgba(0,207,255,0.15)]">
                 <Clock className="h-3.5 w-3.5 text-[#00CFFF] drop-shadow-[0_0_6px_#00CFFF]" />
                 <span className="font-mono text-[13px] font-semibold tracking-[0.14em] text-[#00CFFF] drop-shadow-[0_0_6px_rgba(0,207,255,0.8)]">
-                  {tPlus}
+                  DAY {dashboard?.mission?.mission_day ?? '—'}
                 </span>
               </div>
             </motion.div>
@@ -106,11 +108,11 @@ export const TopBar: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="flex items-center gap-3 overflow-hidden"
             >
-              {/* MET Pill */}
+              {/* Elapsed mission time is absent from the API contract. */}
               <div className="flex items-center gap-2 rounded-full px-4 py-1.5 bg-[#081A30]/75 border border-[#00CFFF]/30 shadow-[inset_0_0_12px_rgba(0,207,255,0.15)]">
                 <Clock className="h-3.5 w-3.5 text-[#00CFFF]" />
                 <span className="font-mono text-[13px] font-semibold tracking-wider text-white">
-                  MET <span className="text-[#00CFFF]">{met}</span>
+                  MET <span className="text-[#94b0d1]">UNAVAILABLE</span>
                 </span>
               </div>
 
@@ -173,7 +175,9 @@ export const TopBar: React.FC = () => {
                     )}
                     <div className="mt-2 text-[10px] text-gray-400 font-mono flex justify-between border-t border-white/10 pt-1">
                       <span>Source: GET /api/v1/dashboard</span>
-                      <span className="text-[#F59E0B]">SYNTHETIC</span>
+                      <span className="text-[#F59E0B]">
+                        {dataClassLabel(alerts[0]?.data_class ?? dashboard?.data_class)}
+                      </span>
                     </div>
                   </motion.div>
                 )}
@@ -187,15 +191,21 @@ export const TopBar: React.FC = () => {
       <div className="flex shrink-0 items-center gap-4">
         {/* Signal telemetry */}
         <div className="flex items-center gap-2 rounded-full px-3 py-1 bg-[#081A30]/60 border border-[#00CFFF]/25 text-[#00CFFF]">
-          <Satellite className="h-3.5 w-3.5 animate-pulse" />
+          <Satellite className="h-3.5 w-3.5" />
           <Wifi className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-mono tracking-wider text-white">LINK OK</span>
+          <span className="text-[11px] font-mono tracking-wider text-white">
+            {dashboardStatus === 'ok'
+              ? 'API OK'
+              : dashboardStatus === 'error'
+                ? 'API OFFLINE'
+                : 'API CONNECTING'}
+          </span>
         </div>
 
         {/* Subject identity from the API (no invented crew member) */}
         <div className="flex items-center gap-3">
           <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-[#081A30] border-2 border-[#00CFFF] shadow-[0_0_14px_rgba(0,207,255,0.85)]">
-            <span className="font-heading font-bold text-xs text-[#00CFFF]">A1</span>
+            <span className="font-heading font-bold text-[9px] text-[#00CFFF]">{subjectId}</span>
           </div>
           <div className="hidden lg:block text-left leading-tight">
             <div className="font-heading text-xs font-semibold text-white tracking-wide">

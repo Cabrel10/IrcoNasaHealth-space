@@ -34,6 +34,12 @@
   --glass-border: 1px solid rgba(0, 207, 255, 0.32);
   --glass-border-active: 1px solid rgba(0, 207, 255, 0.72);
   --shadow-cyan-glow: 0 0 20px rgba(0, 207, 255, 0.45), inset 0 0 12px rgba(0, 207, 255, 0.22);
+
+  /* HUD Holographic Variables */
+  --hud-perspective: 960px;
+  --hud-selection-radius: 12px;
+  --hud-icon-box: 28px;
+  --hud-icon-gap: 14px;
 }
 
 @layer base {
@@ -236,3 +242,45 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* 3D Anatomical Explorer precision controls */
+.font-mono-tabular {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"].clinical-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].clinical-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+input[type="range"].clinical-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  margin-top: -5px;
+  background: #38bdf8;
+  border: 2px solid #0b1120;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.55);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type="range"].clinical-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+input[type="range"].clinical-slider.crimson::-webkit-slider-thumb {
+  background: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.6);
+}
+

@@ -12,7 +12,6 @@ import {
   ChevronRight,
   TrendingUp,
   Info,
-  CheckCircle2,
   X,
   Calendar,
 } from 'lucide-react';
@@ -26,7 +25,10 @@ import {
 } from 'recharts';
 
 import { useMissionStore } from '@/stores/useMissionStore';
-import { CYLINDER_METRICS, INDICATOR_IDS, type CylinderMetric } from '@/constants/metrics';
+import {
+  CYLINDER_METRICS,
+  type MetricPresentation,
+} from '@/constants/metrics';
 import {
   buildIndicatorMap,
   metricValueText,
@@ -35,13 +37,18 @@ import {
   metricStatusText as statusTextOf,
   metricBaseline as baselineOf,
   metricBaselineSd as baselineSdOf,
+  indicatorForMetric,
+  dataClassLabel,
+  dataClassVariant,
+  indicatorReferenceLabel,
+  thresholdStatusLabel,
   globalLevelView,
 } from '@/services/dashboardValues';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { RingGauge } from '@/components/ui/RingGauge';
+import { IndicatorProvenance } from '@/components/ui/IndicatorProvenance';
 import { Sparkline } from '@/components/ui/Sparkline';
-import { MiniGlobe } from '@/components/ui/MiniGlobe';
 import { useReducedMotion } from '@/hooks/useChrono';
 import { SPRING_SNAP } from '@/constants/motion';
 import astronautImg from '@/assets/hero.png';
@@ -118,10 +125,6 @@ export const CockpitView: React.FC = () => {
 
   // Live jitter (fake fluctuation) removed: values come from the IRCO API only.
 
-  // Current metric data for right panel
-  const activeMetric: CylinderMetric =
-    CYLINDER_METRICS.find((m) => m.id === selectedMetricId) || CYLINDER_METRICS[0];
-
   // ─── Real backend resolution (shared module, single source of truth) ──────
   const indicatorMap = buildIndicatorMap(dashboard?.indicators);
   const level = dashboard?.global?.level ?? 'no_data';
@@ -134,8 +137,15 @@ export const CockpitView: React.FC = () => {
   const metricBaseline = (metricId: string) => baselineOf(indicatorMap, metricId);
   const metricBaselineSd = (metricId: string) => baselineSdOf(indicatorMap, metricId);
 
+  // Current metric data for right panel
+  const activeMetric: MetricPresentation =
+    CYLINDER_METRICS.find((m) => m.id === selectedMetricId) || CYLINDER_METRICS[0];
+  const activeIndicator = indicatorForMetric(indicatorMap, activeMetric.id);
+  const activeMetricHistory = metricHistory(activeMetric.id);
   const spo2Metric = resolveMetric('spo2');
   const tempMetric = resolveMetric('body-temp');
+  const spo2Indicator = indicatorForMetric(indicatorMap, 'spo2');
+  const tempIndicator = indicatorForMetric(indicatorMap, 'body-temp');
   const sleeping = dashboardStatus === 'loading';
   const backendDown = dashboardStatus === 'error';
 
@@ -162,7 +172,7 @@ export const CockpitView: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-[calc(100vh-72px)] flex flex-col justify-between p-4 lg:p-6 overflow-hidden select-none">
+    <div className="relative w-full min-h-[calc(100vh-72px)] flex flex-col justify-between p-4 lg:p-6 overflow-y-auto select-none">
       {/* Top Banner (Medical Truth Rule) */}
       <div className="flex items-center justify-between z-20 px-2 -mb-2">
         <div className="flex items-center gap-2">
@@ -171,14 +181,13 @@ export const CockpitView: React.FC = () => {
           ) : (
             <>
               <StatusPill
-                label={`DATA: ${(dashboard?.data_class ?? '…').toUpperCase()}`}
-                variant="synthetic"
+                label={`DATA: ${dataClassLabel(dashboard?.data_class)}`}
+                variant={dataClassVariant(dashboard?.data_class)}
                 showDot
               />
               <StatusPill label={`GLOBAL: ${level.toUpperCase()}`} variant={globalVariant} showDot />
             </>
           )}
-          <StatusPill label="THRESHOLD: PROVISIONAL" variant="provisional" showDot />
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 rounded-full bg-[#081A30]/80 px-2 py-1 border border-[#00CFFF]/25">
@@ -265,6 +274,8 @@ export const CockpitView: React.FC = () => {
               }}
             >
               {CYLINDER_METRICS.map((metric, i) => {
+                const indicator = indicatorForMetric(indicatorMap, metric.id);
+                const history = metricHistory(metric.id);
                 const cardAngle = i * 60;
                 // Calculate angular distance to front
                 const totalDiff = (cardAngle + rotationAngle) % 360;
@@ -310,11 +321,18 @@ export const CockpitView: React.FC = () => {
                             {getMetricIcon(metric.iconName, 'w-5 h-5')}
                           </div>
                         </div>
-                        <StatusPill
-                          label={sleeping ? '…' : (metricStatusText(metric.id))}
-                          variant={indicatorStatusVariant(metric.id)}
-                          showDot={isFront}
-                        />
+                        <div className="flex flex-col items-end gap-1">
+                          <StatusPill
+                            label={sleeping ? '…' : metricStatusText(metric.id)}
+                            variant={indicatorStatusVariant(metric.id)}
+                            showDot={isFront}
+                          />
+                          <StatusPill
+                            label={dataClassLabel(indicator?.value == null ? null : indicator.data_class)}
+                            variant={dataClassVariant(indicator?.value == null ? null : indicator.data_class)}
+                            showDot={false}
+                          />
+                        </div>
                       </div>
 
                       {/* Middle: Big Value & Subtitle */}
@@ -336,36 +354,28 @@ export const CockpitView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Continuous ECG line on Heart Rate card or Sparkline */}
-                      {metric.id === 'heart-rate' ? (
-                        <div className="relative w-full h-12 overflow-hidden rounded-lg bg-black/40 border border-[#FF2D55]/20 flex items-center">
-                          <svg
-                            viewBox="0 0 200 40"
-                            className="w-full h-full stroke-[#FF2D55] fill-none"
-                            style={{ filter: 'drop-shadow(0 0 6px #FF2D55)' }}
-                          >
-                            <path
-                              d="M 0 20 L 30 20 L 40 10 L 48 32 L 56 6 L 64 26 L 72 20 L 110 20 L 120 10 L 128 32 L 136 6 L 144 26 L 152 20 L 200 20"
-                              strokeWidth="2"
-                              strokeDasharray="200"
-                              className="animate-ecg"
-                            />
-                          </svg>
-                        </div>
-                      ) : (
-                        <div className="w-full h-12 flex items-center justify-center">
+                      {/* History is shown only when the API supplies points. */}
+                      <div className="w-full h-12 flex items-center justify-center">
+                        {history.length > 0 ? (
                           <Sparkline
-                            data={metric.history.map((h) => h.value)}
+                            data={history.map((point) => point.value)}
                             color={metric.color}
                             width={170}
                             height={34}
                           />
-                        </div>
-                      )}
+                        ) : (
+                          <span className="text-[10px] font-mono text-gray-500">
+                            HISTORIQUE UNAVAILABLE
+                          </span>
+                        )}
+                      </div>
 
                       {/* Bottom card info */}
                       <div className="pt-2 border-t border-white/10 flex justify-between items-center text-[10px] font-mono text-[#94b0d1]">
-                        <span>REF: {metric.normalRange}</span>
+                        <span>
+                          REF: {indicatorReferenceLabel(indicator)} ·{' '}
+                          {thresholdStatusLabel(indicator?.threshold_status)}
+                        </span>
                         <span
                           className={
                             resolveMetric(metric.id).text === null
@@ -456,7 +466,12 @@ export const CockpitView: React.FC = () => {
                 <StatusPill
                   label={sleeping ? '…' : metricStatusText(activeMetric.id)}
                   variant={indicatorStatusVariant(activeMetric.id)}
-                  showCheck={!sleeping && indicatorStatusVariant(activeMetric.id) === 'nominal'}
+                  showCheck={false}
+                />
+                <StatusPill
+                  label={dataClassLabel(activeIndicator?.value == null ? null : activeIndicator.data_class)}
+                  variant={dataClassVariant(activeIndicator?.value == null ? null : activeIndicator.data_class)}
+                  showDot={false}
                 />
               </div>
 
@@ -472,17 +487,18 @@ export const CockpitView: React.FC = () => {
                     </span>
                   </div>
                   {(() => {
-                    const primary = (INDICATOR_IDS[activeMetric.id] ?? [])[0];
-                    const ind = primary ? indicatorMap.get(primary) : undefined;
-                    if (sleeping || !ind) {
+                    if (sleeping || !activeIndicator) {
                       return (
                         <div className="flex items-center gap-1.5 mt-1 text-xs font-mono text-gray-400">
                           <TrendingUp className="w-3.5 h-3.5" />
-                          <span>Qualité: …</span>
+                          <span>Qualité: UNAVAILABLE</span>
                         </div>
                       );
                     }
-                    const tq = ind.measurement_quality || ind.quality;
+                    const tq =
+                      activeIndicator.measurement_quality ||
+                      activeIndicator.quality ||
+                      'UNAVAILABLE';
                     const colorCls =
                       tq === 'valid' ? 'text-[#22C55E]' : tq === 'suspect' ? 'text-[#FF2D55]' : 'text-gray-400';
                     return (
@@ -490,7 +506,9 @@ export const CockpitView: React.FC = () => {
                         <TrendingUp className="w-3.5 h-3.5" />
                         <span>
                           Qualité: {tq || 'unknown'}
-                          {ind.last_updated ? ` · ${ind.last_updated.slice(11, 16)} UTC` : ''}
+                          {activeIndicator.last_updated
+                            ? ` · ${activeIndicator.last_updated.slice(11, 16)} UTC`
+                            : ''}
                         </span>
                       </div>
                     );
@@ -500,7 +518,7 @@ export const CockpitView: React.FC = () => {
                 {/* Pulsing Holographic Heart Icon / Asset */}
                 <div className="relative flex items-center justify-center w-16 h-16">
                   <div
-                    className="absolute inset-0 rounded-full animate-ping opacity-25"
+                    className={`absolute inset-0 rounded-full ${reducedMotion ? '' : 'animate-ping'} opacity-25`}
                     style={{ backgroundColor: activeMetric.color }}
                   />
                   <div
@@ -511,7 +529,7 @@ export const CockpitView: React.FC = () => {
                     }}
                   >
                     <Heart
-                      className="w-7 h-7 text-[#FF2D55] animate-pulse"
+                      className={`w-7 h-7 text-[#FF2D55] ${reducedMotion ? '' : 'animate-pulse'}`}
                       fill={activeMetric.id === 'heart-rate' ? '#FF2D55' : 'none'}
                     />
                   </div>
@@ -520,8 +538,9 @@ export const CockpitView: React.FC = () => {
 
               {/* Real-time Area Chart (Recharts) */}
               <div className="h-28 w-full py-1">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={metricHistory(activeMetric.id)}>
+                {activeMetricHistory.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={activeMetricHistory}>
                     <defs>
                       <linearGradient id="areaGlow" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#00CFFF" stopOpacity={0.4} />
@@ -551,16 +570,24 @@ export const CockpitView: React.FC = () => {
                       fill="url(#areaGlow)"
                       isAnimationActive={!reducedMotion}
                     />
-                  </AreaChart>
-                </ResponsiveContainer>
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[10px] font-mono text-gray-500">
+                    HISTORIQUE UNAVAILABLE — aucune série reçue par l’API
+                  </div>
+                )}
               </div>
 
               {/* 3 Metric Info Boxes */}
               <div className="grid grid-cols-3 gap-2 py-2">
                 <div className="p-2 rounded-xl bg-white/5 border border-white/10 text-center">
-                  <div className="text-[9px] font-mono uppercase text-[#94b0d1]">Plage Normale</div>
+                  <div className="text-[9px] font-mono uppercase text-[#94b0d1]">Référence API</div>
                   <div className="text-xs font-mono font-bold text-white mt-0.5">
-                    {activeMetric.normalRange}
+                    {indicatorReferenceLabel(activeIndicator)}
+                  </div>
+                  <div className="text-[9px] font-mono text-gray-400">
+                    {thresholdStatusLabel(activeIndicator?.threshold_status)}
                   </div>
                 </div>
                 <div className="p-2 rounded-xl bg-white/5 border border-white/10 text-center">
@@ -605,18 +632,7 @@ export const CockpitView: React.FC = () => {
                   exit={{ height: 0, opacity: 0 }}
                   className="mt-2 p-2.5 rounded-xl bg-[#020B18]/90 border border-[#00CFFF]/30 text-[10px] font-mono text-gray-300 space-y-1"
                 >
-                  <div className="flex justify-between">
-                    <span>Source télémétrie:</span>
-                    <span className="text-[#00CFFF]">BIOSENSOR_WEARABLE_A7</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Qualité de mesure:</span>
-                    <span className="text-[#22C55E]">VALID · 100% CONFIDENCE</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Fréquence d'échantillonnage:</span>
-                    <span className="text-white">1 Hz continu</span>
-                  </div>
+                  <IndicatorProvenance indicator={activeIndicator} />
                 </motion.div>
               )}
             </GlassCard>
@@ -661,7 +677,7 @@ export const CockpitView: React.FC = () => {
         {/* KPI 2: SpO₂ — real value or NO DATA */}
         <GlassCard padding="sm" className="flex items-center gap-4">
           <RingGauge
-            value={spo2Metric.text ? Number(spo2Metric.text) : 0}
+            value={spo2Metric.text ? Number(spo2Metric.text) : null}
             max={100}
             size={58}
             strokeWidth={5}
@@ -671,36 +687,53 @@ export const CockpitView: React.FC = () => {
             <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Saturation O₂ (SpO₂)</div>
             <div className="font-heading text-lg font-bold text-white flex items-center gap-1.5">
               <span data-testid="kpi-spo2">{sleeping ? '···' : (spo2Metric.text ?? 'NO DATA')}</span>
-              <span className="text-[10px] font-mono font-semibold text-gray-400 bg-white/5 px-1.5 rounded">
-                {spo2Metric.text ? 'MEASURED' : 'NO DATA'}
-              </span>
+              {spo2Metric.text && (
+                <span className="text-[10px] font-mono text-gray-400">
+                  {spo2Indicator?.unit}
+                </span>
+              )}
+              <StatusPill
+                label={dataClassLabel(spo2Metric.text ? spo2Indicator?.data_class : null)}
+                variant={dataClassVariant(spo2Metric.text ? spo2Indicator?.data_class : null)}
+                showDot={false}
+              />
             </div>
             <div className="w-full mt-1">
-              <Sparkline data={metricHistory('spo2').map((h) => h.value)} color={spo2Metric.text ? '#00CFFF' : '#6b7280'} width={110} height={18} />
+              {metricHistory('spo2').length > 0 ? (
+                <Sparkline data={metricHistory('spo2').map((h) => h.value)} color="#00CFFF" width={110} height={18} />
+              ) : (
+                <span className="text-[9px] font-mono text-gray-500">NO HISTORY</span>
+              )}
             </div>
           </div>
         </GlassCard>
 
         {/* KPI 3: Body temperature — real value or NO DATA */}
         <GlassCard padding="sm" className="flex items-center gap-4">
-          <RingGauge
-            value={tempMetric.text ? Number(tempMetric.text) : 0}
-            max={40}
-            size={58}
-            strokeWidth={5}
-            color={tempMetric.text ? '#F59E0B' : '#6b7280'}
-            unit="°C"
-          />
+          <div className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border border-[#F59E0B]/30 text-[10px] font-mono text-[#F59E0B]">
+            {tempMetric.text ? 'OBSERVED' : 'NO DATA'}
+          </div>
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Température Corporelle</div>
             <div className="font-heading text-lg font-bold text-white flex items-center gap-1.5">
               <span data-testid="kpi-temp">{sleeping ? '···' : (tempMetric.text ?? 'NO DATA')}</span>
-              <span className="text-[10px] font-mono font-semibold text-gray-400 bg-white/5 px-1.5 rounded">
-                {tempMetric.text ? '°C' : 'NO DATA'}
-              </span>
+              {tempMetric.text && (
+                <span className="text-[10px] font-mono text-gray-400">
+                  {tempIndicator?.unit}
+                </span>
+              )}
+              <StatusPill
+                label={dataClassLabel(tempMetric.text ? tempIndicator?.data_class : null)}
+                variant={dataClassVariant(tempMetric.text ? tempIndicator?.data_class : null)}
+                showDot={false}
+              />
             </div>
             <div className="w-full mt-1">
-              <Sparkline data={metricHistory('body-temp').map((h) => h.value)} color={tempMetric.text ? '#F59E0B' : '#6b7280'} width={110} height={18} />
+              {metricHistory('body-temp').length > 0 ? (
+                <Sparkline data={metricHistory('body-temp').map((h) => h.value)} color="#F59E0B" width={110} height={18} />
+              ) : (
+                <span className="text-[9px] font-mono text-gray-500">NO HISTORY</span>
+              )}
             </div>
           </div>
         </GlassCard>
@@ -710,17 +743,9 @@ export const CockpitView: React.FC = () => {
           <div className="z-10">
             <div className="text-[10px] font-mono uppercase text-[#94b0d1]">Statut Mission</div>
             <div className="flex items-center gap-1.5 text-sm font-heading font-bold text-[#22C55E] mt-0.5">
-              <CheckCircle2 className="w-4 h-4" />
+              <Activity className="w-4 h-4" style={{ color: level === 'green' ? '#22C55E' : level === 'amber' ? '#F59E0B' : level === 'red' ? '#FF2D55' : '#6b7280' }} />
               <span>
-                {sleeping
-                  ? '···'
-                  : level === 'green'
-                  ? 'Systèmes Nominaux'
-                  : level === 'amber'
-                  ? 'Vigilance Requise'
-                  : level === 'red'
-                  ? 'État Critique'
-                  : 'Sans Données'}
+                {sleeping ? '···' : `Vigilance ${levelText}`}
               </span>
             </div>
             <div className="text-[10px] font-mono text-[#00CFFF] mt-1" data-testid="mission-id">
@@ -732,13 +757,13 @@ export const CockpitView: React.FC = () => {
 
           {/* Floating Astronaut Asset */}
           <motion.div
-            animate={{
+            animate={reducedMotion ? {} : {
               y: [0, -8, 0],
               rotate: [0, 1.5, -1.5, 0],
             }}
             transition={{
               duration: 6,
-              repeat: Infinity,
+              repeat: reducedMotion ? 0 : Infinity,
               ease: 'easeInOut',
             }}
             className="w-14 h-14 -mr-2 object-contain filter drop-shadow-[0_0_12px_rgba(0,207,255,0.4)]"
@@ -746,11 +771,6 @@ export const CockpitView: React.FC = () => {
             <img src={astronautImg} alt="Astronaut" className="w-full h-full object-contain" />
           </motion.div>
         </GlassCard>
-      </div>
-
-      {/* Floating Bottom-Left MiniGlobe */}
-      <div className="absolute bottom-5 left-6 z-30 hidden xl:block">
-        <MiniGlobe size={60} />
       </div>
 
       {/* ─── History Modal ────────────────────────────────────────────────── */}
@@ -777,14 +797,20 @@ export const CockpitView: React.FC = () => {
             </div>
 
             <div className="h-64 w-full my-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={activeMetric.history}>
+              {activeMetricHistory.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={activeMetricHistory}>
                   <XAxis dataKey="time" stroke="#6d88ab" />
                   <YAxis stroke="#6d88ab" />
                   <Tooltip />
                   <Area type="monotone" dataKey="value" stroke="#00CFFF" fill="#00CFFF" fillOpacity={0.2} />
-                </AreaChart>
-              </ResponsiveContainer>
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm font-mono text-gray-400">
+                  No historical observations were supplied by the API.
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between items-center text-xs font-mono text-gray-400 border-t border-white/10 pt-4">

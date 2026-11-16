@@ -22,7 +22,12 @@ import { MiniGlobe } from '@/components/ui/MiniGlobe';
 
 export const SideNavigation: React.FC = () => {
   const { activeNavId, setActiveNav } = useMissionStore();
-  const isCrewVariant = activeNavId === 'crew-health';
+  const isCrewVariant =
+    activeNavId === 'crew-health' ||
+    activeNavId === 'anatomy' ||
+    activeNavId === 'cardiovascular' ||
+    activeNavId === 'neurological' ||
+    activeNavId === 'respiratory';
 
   const getCockpitIcon = (id: string) => {
     switch (id) {
@@ -30,6 +35,8 @@ export const SideNavigation: React.FC = () => {
         return LayoutDashboard;
       case 'crew-health':
         return Activity;
+      case 'anatomy':
+        return Atom;
       case 'cardiovascular':
         return Heart;
       case 'neurological':
@@ -168,6 +175,7 @@ export const SideNavigation: React.FC = () => {
           <div className="flex flex-col items-center gap-3">
             {[
               { id: 'crew-health', label: 'Vitals', icon: Activity },
+              { id: 'anatomy', label: '3D Anatomy', icon: Atom },
               { id: 'stats', label: 'Stats', icon: BarChart3 },
               { id: 'database', label: 'Database', icon: Database },
               { id: 'settings', label: 'Settings', icon: Settings },

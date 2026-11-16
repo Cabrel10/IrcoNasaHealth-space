@@ -77,6 +77,7 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                     ("heart_rate", round1(62.0 + 46.0 * progress), "bpm"),
                     ("sleep_duration", round1(7.8 - 3.6 * progress), "hours"),
                     ("fatigue_score", round1(2.0 + 6.0 * progress), "score"),
+                    ("spo2", round1(98.0 - 10.0 * progress), "%"),
                 ],
             )
         }
@@ -87,6 +88,7 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                 ("heart_rate", 68.0, "bpm"),
                 ("sleep_duration", 7.5, "hours"),
                 ("fatigue_score", 2.0, "score"),
+                ("spo2", 98.0, "%"),
             ],
         ),
         DemoScenario::Dropout => (
@@ -96,6 +98,7 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                 ("heart_rate", 68.0, "bpm"),
                 ("sleep_duration", 7.5, "hours"),
                 ("fatigue_score", 2.0, "score"),
+                ("spo2", 98.0, "%"),
             ],
         ),
     };
@@ -264,11 +267,12 @@ mod tests {
     fn a01_replay_moves_from_green_to_demo_amber_then_red() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../rules/rules.json");
         let rules = load_rules(path).unwrap();
+        // Day 116: SpO₂ = 90.8% (< 92%) now triggers RED earlier
         for (day, expected) in [
             (1, VigilanceLevel::Green),
             (96, VigilanceLevel::Green),
             (97, VigilanceLevel::Amber),
-            (116, VigilanceLevel::Amber),
+            (116, VigilanceLevel::Red), // Changed: SpO₂ < 92% triggers SPO2_THRESHOLD_001
             (117, VigilanceLevel::Red),
             (124, VigilanceLevel::Red),
         ] {
@@ -281,9 +285,9 @@ mod tests {
     fn nominal_and_dropout_are_explicit_and_never_fill_missing_sensor_values() {
         let nominal = replay(DemoScenario::Nominal, 50).unwrap();
         let dropout = replay(DemoScenario::Dropout, 21).unwrap();
-        assert_eq!(nominal.observations.len(), 3);
+        assert_eq!(nominal.observations.len(), 4);
         assert!(nominal.missing_indicators.is_empty());
-        assert_eq!(dropout.observations.len(), 2);
+        assert_eq!(dropout.observations.len(), 3);
         assert_eq!(dropout.missing_indicators, vec!["heart_rate"]);
     }
 

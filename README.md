@@ -11,6 +11,20 @@
 
 ---
 
+## 🔗 Project Links
+
+| Resource | Link |
+|---|---|
+| 🎞️ **Project Demonstration** (slide deck) | [Google Slides](https://docs.google.com/presentation/d/1hyIdhvDaTLG2DtwyJYLbaSgti6Gwfnhe/edit?usp=drive_link) |
+| 📄 **Project Report** (PDF) | [Google Drive](https://drive.google.com/file/d/1M-xSFB7F9zB8d6chqWByZGQWHY8zYCfV/view?usp=drive_link) |
+| 🖥️ **Live Demo** (may be offline) | http://169.58.67.16:5174/ |
+| 🤖 **AI Engine Notebook** (Colab: multimodal chat, speech, vision — explain-only, never decides) | [Google Colab](https://colab.research.google.com/drive/1S_t90rrS8T5woWzmkcaEBzVquNpItbWp#scrollTo=D8NgJ0tYrsn8) |
+
+> The live demo runs a synthetic astronaut (A-01, mission days 1→124: green →
+> amber → red). Deep-link any mission day with `/?day=97`.
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -172,6 +186,10 @@ nase/
 ├── data/               # Raw data, normalized data, manifests
 ├── colab/              # Optional Colab runtime integration
 ├── docs/               # Architecture, API & scientific validation docs
+├── frontend/           # React/Vite dashboard (consumes the IRCO API only)
+│   ├── src/            # App, views, 3D anatomy module (Three.js)
+│   ├── tests/e2e/      # Playwright suites against the real backend
+│   └── fixtures/       # Captured API responses
 └── tests/              # Integration tests & fixtures
 ```
 

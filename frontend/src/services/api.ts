@@ -22,16 +22,28 @@ export interface DashboardIndicator {
   value: number | null;
   unit: string;
   last_updated: string | null;
+  source: string | null;
   quality: string;
   measurement_quality: string;
-  data_class: 'measured_real' | 'analog' | 'synthetic';
+  data_class: DataClass;
   status: string;
   data_status: string;
   history: Array<{ timestamp: string; value: number }>;
   baseline: { mean: number; median: number; sample_count: number; standard_deviation: number } | null;
   trend?: { direction: string; slope_per_day: number } | null;
-  thresholds?: { reference_min: number; reference_max: number; reference_source: string; status: string } | null;
+  thresholds: {
+    reference_min?: number | null;
+    reference_max?: number | null;
+    reference_source?: string | null;
+    status?: string;
+  } | null;
+  threshold_status: 'validated' | 'provisional' | 'illustrative' | 'not_applicable';
+  expected_frequency: string;
+  age_seconds: number | null;
+  spark: number[];
 }
+
+export type DataClass = 'measured_real' | 'analog' | 'synthetic';
 
 export interface DashboardGlobal {
   level: 'green' | 'amber' | 'red' | 'no_data';
@@ -52,17 +64,23 @@ export interface DashboardMission {
 export interface DashboardAlert {
   id: string;
   state: string;
-  vigilance?: string;
   persistence: string;
+  vigilance?: string;
   triggered_rules?: string[];
   actions?: string[];
-  data_class?: string;
+  data_class?: DataClass;
+}
+
+export interface DashboardHazard {
+  id: string;
+  level: DashboardGlobal['level'];
+  indicators: string[];
 }
 
 export interface DashboardResponse {
   mode: string;
   subject_id: string;
-  data_class: string;
+  data_class: DataClass;
   global: DashboardGlobal;
   indicators: DashboardIndicator[];
   data_quality: { data_class: string; valid: number; suspect: number; no_data: number };
@@ -71,6 +89,16 @@ export interface DashboardResponse {
   last_updated?: string;
   medical_notice?: string;
   active_alerts?: DashboardAlert[];
+  triggered_rules: string[];
+  hazards: DashboardHazard[];
+  anomalies: { available: boolean; items: unknown[]; reason: string };
+  clinical_assessment: { available: boolean; diagnoses: unknown[]; reason: string };
+  routine: {
+    subject_id: string;
+    date: string;
+    tasks: Array<{ id: string; name: string; completed: boolean; [key: string]: unknown }>;
+    progress: { completed: number; total: number; percentage: number };
+  };
 }
 
 export interface MissionInfo {
@@ -88,10 +116,34 @@ export interface IndicatorMeta {
   unit: string;
   family: string;
   collection_method: string;
-  frequency: string;
+  expected_frequency: string;
   reference_min: number | null;
   reference_max: number | null;
   reference_status: string;
+}
+
+export interface DemoScenario {
+  id: string;
+  data_class: 'synthetic';
+  days: number;
+  description: string;
+}
+
+export interface AssistantCitation {
+  document_id: string;
+  title: string;
+  publisher?: string;
+  url?: string | null;
+  section?: string | null;
+  page_numbers?: number[] | null;
+}
+
+export interface AssistantResponse {
+  answer: string;
+  citations: AssistantCitation[];
+  disclaimer: string;
+  provider: string;
+  source_not_found: boolean;
 }
 
 export interface IndicatorHistory {
@@ -171,12 +223,12 @@ export const api = {
     }),
 
   assistantChat: (data: { question: string; hazard?: string; indicator?: string; subject_id?: string; data_class?: string }) =>
-    fetchJSON<{ answer: string; citations: Array<{ document_id: string; title: string }>; disclaimer: string; provider: string }>(
-      '/assistant/chat',
-      { method: 'POST', body: JSON.stringify(data) },
-    ),
+    fetchJSON<AssistantResponse>('/assistant/chat', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
-  demoScenarios: () => fetchJSON<Array<{ scenario: string; days: number }>>('/demo/scenarios'),
+  demoScenarios: () => fetchJSON<DemoScenario[]>('/demo/scenarios'),
 
   dashboardSSE: (params: { subject_id?: string; data_class: string }) => {
     const qs = new URLSearchParams({ data_class: params.data_class });

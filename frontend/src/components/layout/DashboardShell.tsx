@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SpaceBackground } from '@/components/layout/SpaceBackground';
 import { TopBar } from '@/components/layout/TopBar';
-import { SideNavigation } from '@/components/layout/SideNavigation';
+import { CurvedSidebar } from '@/components/layout/CurvedSidebar';
 import { IntroSequence } from '@/components/layout/IntroSequence';
 import { CockpitView } from '@/components/views/CockpitView';
 import { CrewHealthView } from '@/components/views/CrewHealthView';
+import { AnatomyView } from '@/components/views/AnatomyView';
 import { useMissionStore } from '@/stores/useMissionStore';
 
 export const DashboardShell: React.FC = () => {
@@ -36,31 +37,17 @@ export const DashboardShell: React.FC = () => {
       {/* 3. TopBar (Fixed 72px with variants A & B) */}
       <TopBar />
 
-      {/* 4. SideNavigation (Curved Cockpit menu <-> Compact Crew rail) */}
-      <SideNavigation />
+      {/* 4. CurvedSidebar (Holographic curved navigation panel) */}
+      <CurvedSidebar />
 
       {/* 5. Main Content Area with View Transition */}
       <motion.main
         layout
         transition={{ duration: 0.6, ease: [0.65, 0, 0.35, 1] }}
-        className={`relative z-10 flex h-[calc(100vh-72px)] flex-1 flex-col overflow-hidden transition-all duration-500 ${
-          isCrewView ? 'pl-[80px]' : 'pl-[290px]'
-        } ${isTransitioning ? 'pointer-events-none' : ''}`}
+        className="relative z-10 flex h-[calc(100vh-72px)] flex-1 flex-col overflow-hidden pt-12 transition-all duration-500 pl-0 md:pl-[276px] md:pt-0 xl:pl-[316px]"
       >
         <AnimatePresence mode="wait">
-          {!isCrewView ? (
-            /* VIEW A: COCKPIT / MISSION OVERVIEW */
-            <motion.div
-              key="cockpit-view"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
-              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full h-full"
-            >
-              <CockpitView />
-            </motion.div>
-          ) : (
+          {activeNavId === 'crew-health' ? (
             /* VIEW B: CREW HEALTH */
             <motion.div
               key="crew-health-view"
@@ -71,6 +58,66 @@ export const DashboardShell: React.FC = () => {
               className="w-full h-full"
             >
               <CrewHealthView />
+            </motion.div>
+          ) : activeNavId === 'anatomy' ? (
+            /* VIEW C: 3D ANATOMICAL EXPLORER */
+            <motion.div
+              key="anatomy-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <AnatomyView />
+            </motion.div>
+          ) : activeNavId === 'cardiovascular' ? (
+            /* VIEW C1: 3D ANATOMY CARDIOVASCULAR FOCUS */
+            <motion.div
+              key="cardio-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <AnatomyView initialSystem="cardiovascular" initialPartId="heart" />
+            </motion.div>
+          ) : activeNavId === 'neurological' ? (
+            /* VIEW C2: 3D ANATOMY NERVOUS FOCUS */
+            <motion.div
+              key="neuro-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <AnatomyView initialSystem="nervous" initialPartId="brain" />
+            </motion.div>
+          ) : activeNavId === 'respiratory' ? (
+            /* VIEW C3: 3D ANATOMY RESPIRATORY FOCUS */
+            <motion.div
+              key="resp-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <AnatomyView initialSystem="organs" initialPartId="lungs" />
+            </motion.div>
+          ) : (
+            /* VIEW A: COCKPIT / MISSION OVERVIEW */
+            <motion.div
+              key="cockpit-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <CockpitView />
             </motion.div>
           )}
         </AnimatePresence>

@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 interface RingGaugeProps {
-  value: number;
+  value: number | null | undefined;
   max?: number;
   size?: number;
   strokeWidth?: number;
@@ -25,7 +25,8 @@ export const RingGauge: React.FC<RingGaugeProps> = ({
   className = '',
 }) => {
   const radius = (size - strokeWidth * 2) / 2;
-  const clamped = Math.min(Math.max(value, 0), max);
+  const hasValue = value !== null && value !== undefined && Number.isFinite(value);
+  const clamped = hasValue ? Math.min(Math.max(value, 0), max) : 0;
   const ratio = clamped / max;
 
   if (semi) {
@@ -44,23 +45,30 @@ export const RingGauge: React.FC<RingGaugeProps> = ({
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
-          {/* Animated Value Arc */}
-          <motion.path
-            d={`M ${strokeWidth} ${size / 2} A ${radius} ${radius} 0 0 1 ${size - strokeWidth} ${size / 2}`}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={arcLength}
-            initial={{ strokeDashoffset: arcLength }}
-            animate={{ strokeDashoffset }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-            strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 6px ${color})` }}
-          />
+          {hasValue && (
+            <motion.path
+              d={`M ${strokeWidth} ${size / 2} A ${radius} ${radius} 0 0 1 ${size - strokeWidth} ${size / 2}`}
+              fill="none"
+              stroke={color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={arcLength}
+              initial={{ strokeDashoffset: arcLength }}
+              animate={{ strokeDashoffset }}
+              transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+              strokeLinecap="round"
+              style={{ filter: `drop-shadow(0 0 6px ${color})` }}
+            />
+          )}
         </svg>
         <div className="text-center -mt-4">
           <div className="font-heading font-bold text-sm tracking-tight text-white">
-            {value} <span className="text-[10px] text-gray-400 font-mono">{unit}</span>
+            {hasValue ? (
+              <>
+                {value} <span className="text-[10px] text-gray-400 font-mono">{unit}</span>
+              </>
+            ) : (
+              <span className="text-[10px] text-gray-400 font-mono">NO DATA</span>
+            )}
           </div>
           {label && <div className="text-[10px] text-[#94b0d1] uppercase tracking-wider font-mono">{label}</div>}
         </div>
@@ -85,28 +93,35 @@ export const RingGauge: React.FC<RingGaugeProps> = ({
             stroke="rgba(255,255,255,0.08)"
             strokeWidth={strokeWidth}
           />
-          {/* Progress circle */}
-          <motion.circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            initial={{ strokeDashoffset: circumference }}
-            animate={{ strokeDashoffset }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-            strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 6px ${color})` }}
-          />
+          {hasValue && (
+            <motion.circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke={color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={circumference}
+              initial={{ strokeDashoffset: circumference }}
+              animate={{ strokeDashoffset }}
+              transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+              strokeLinecap="round"
+              style={{ filter: `drop-shadow(0 0 6px ${color})` }}
+            />
+          )}
         </svg>
 
         {/* Center content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
           <span className="font-heading font-bold text-xs tracking-tight text-white">
-            {value}
-            <span className="text-[9px] text-[#00CFFF]/80 font-mono ml-0.5">{unit}</span>
+            {hasValue ? (
+              <>
+                {value}
+                <span className="text-[9px] text-[#00CFFF]/80 font-mono ml-0.5">{unit}</span>
+              </>
+            ) : (
+              <span className="text-[9px] text-gray-400 font-mono">NO DATA</span>
+            )}
           </span>
         </div>
       </div>

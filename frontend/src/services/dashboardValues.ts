@@ -11,7 +11,99 @@ export function buildIndicatorMap(indicators?: DashboardIndicator[]): IndicatorM
 }
 
 export const fmtValue = (v: number | null | undefined): string | null =>
-  v === null || v === undefined ? null : String(Number(v));
+  v === null || v === undefined || !Number.isFinite(Number(v))
+    ? null
+    : String(Number(v));
+
+export function indicatorForMetric(
+  map: IndicatorMap,
+  metricId: string,
+): DashboardIndicator | undefined {
+  const primary = (INDICATOR_IDS[metricId] ?? [])[0];
+  return primary ? map.get(primary) : undefined;
+}
+
+export function dataClassLabel(dataClass?: string | null): string {
+  switch (dataClass) {
+    case 'live':
+      return 'LIVE';
+    case 'public_data':
+      return 'PUBLIC DATA';
+    case 'measured_real':
+      return 'MEASURED REAL';
+    case 'analog':
+      return 'ANALOG DATA';
+    case 'synthetic':
+      return 'SYNTHETIC';
+    default:
+      return 'UNAVAILABLE';
+  }
+}
+
+export function dataClassVariant(
+  dataClass?: string | null,
+): 'measured' | 'info' | 'synthetic' | 'nodata' {
+  switch (dataClass) {
+    case 'live':
+      return 'measured';
+    case 'public_data':
+      return 'info';
+    case 'measured_real':
+      return 'measured';
+    case 'analog':
+      return 'info';
+    case 'synthetic':
+      return 'synthetic';
+    default:
+      return 'nodata';
+  }
+}
+
+export function thresholdStatusLabel(status?: string | null): string {
+  switch (status) {
+    case 'validated':
+      return 'VALIDATED';
+    case 'provisional':
+      return 'PROVISIONAL';
+    case 'illustrative':
+      return 'ILLUSTRATIVE';
+    case 'not_applicable':
+      return 'NOT APPLICABLE';
+    default:
+      return 'UNAVAILABLE';
+  }
+}
+
+export function indicatorReferenceLabel(
+  indicator?: DashboardIndicator,
+): string {
+  if (!indicator?.thresholds) return 'UNAVAILABLE';
+  const minimum = indicator.thresholds.reference_min;
+  const maximum = indicator.thresholds.reference_max;
+  if (minimum == null && maximum == null) return 'UNAVAILABLE';
+  const range =
+    minimum != null && maximum != null
+      ? `${minimum}–${maximum}`
+      : minimum != null
+        ? `≥ ${minimum}`
+        : `≤ ${maximum}`;
+  return `${range} ${indicator.unit}`;
+}
+
+export function observationTimeLabel(timestamp?: string | null): string {
+  if (!timestamp) return 'UNAVAILABLE';
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return 'INVALID TIMESTAMP';
+  return `${parsed.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+export function ageLabel(ageSeconds?: number | null): string {
+  if (ageSeconds == null || !Number.isFinite(ageSeconds)) return 'UNAVAILABLE';
+  if (ageSeconds < 0) return 'INVALID AGE';
+  if (ageSeconds < 60) return `${ageSeconds} s`;
+  if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)} min`;
+  return `${Math.floor(ageSeconds / 3600)} h ${Math.floor((ageSeconds % 3600) / 60)} min`;
+}
 
 /** Display text for a UI metric id; null means "no backend data" (show NO DATA). */
 export function metricValueText(map: IndicatorMap, metricId: string): string | null {
@@ -36,11 +128,11 @@ export function metricHistory(
 export type IndicatorStatusVariant = 'nominal' | 'warning' | 'critical' | 'nodata';
 
 export function metricStatusVariant(map: IndicatorMap, metricId: string): IndicatorStatusVariant {
-  const primary = (INDICATOR_IDS[metricId] ?? [])[0];
-  const st = primary ? map.get(primary)?.status : undefined;
+  const indicator = indicatorForMetric(map, metricId);
+  const st = indicator?.data_status ?? indicator?.status;
   if (st === 'fresh') return 'nominal';
   if (st === 'stale') return 'warning';
-  if (st === 'suspect') return 'critical';
+  if (st === 'suspect' || st === 'invalid') return 'critical';
   return 'nodata';
 }
 
@@ -48,12 +140,13 @@ const STATUS_TEXT: Record<string, string> = {
   fresh: 'FRESH',
   stale: 'STALE',
   suspect: 'SUSPECT',
+  invalid: 'INVALID',
   no_data: 'NO DATA',
 };
 
 export function metricStatusText(map: IndicatorMap, metricId: string): string {
-  const primary = (INDICATOR_IDS[metricId] ?? [])[0];
-  const st = primary ? map.get(primary)?.status : undefined;
+  const indicator = indicatorForMetric(map, metricId);
+  const st = indicator?.data_status ?? indicator?.status;
   return STATUS_TEXT[st ?? 'no_data'] ?? 'NO DATA';
 }
 

@@ -33,16 +33,16 @@ export const IntroSequence: React.FC = () => {
     // t=1.6-3.0s: Boot lines & progress bar
     const t3 = setTimeout(() => {
       setStep(3);
-      setBootLines((prev) => [...prev, '> Linking Apollo-7 telemetry...']);
+      setBootLines((prev) => [...prev, '> Loading configured IRCO demo scenario...']);
     }, 1600);
 
     const t4 = setTimeout(() => {
-      setBootLines((prev) => [...prev, '> Calibrating biosensors...']);
+      setBootLines((prev) => [...prev, '> Indicator provenance will be shown from API metadata...']);
       setProgress(45);
     }, 1900);
 
     const t5 = setTimeout(() => {
-      setBootLines((prev) => [...prev, '> Earth link established 42 ms']);
+      setBootLines((prev) => [...prev, '> Demo interface ready; data class is not a live-data claim.']);
       setProgress(100);
     }, 2300);
 

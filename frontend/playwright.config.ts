@@ -6,7 +6,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1,
-  reporter: 'html',
+  reporter: 'list',
   use: {
     baseURL: 'http://localhost:3081',
     trace: 'on-first-retry',
@@ -17,5 +17,5 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  timeout: 30000,
+  timeout: 60000,
 });

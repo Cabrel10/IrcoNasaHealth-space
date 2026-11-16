@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import {
   Heart,
@@ -12,16 +12,9 @@ import {
   Clock,
   Sparkles,
   ChevronRight,
+  Atom,
+  Eye,
 } from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from 'recharts';
-
 import { useMissionStore } from '@/stores/useMissionStore';
 import { VITALS_CARDS, type CrewMember } from '@/constants/metrics';
 import {
@@ -29,17 +22,76 @@ import {
   metricValueText,
   metricHistory,
   globalLevelView,
+  dataClassLabel,
+  dataClassVariant,
+  indicatorForMetric,
+  fmtValue,
+  indicatorReferenceLabel,
+  observationTimeLabel,
+  thresholdStatusLabel,
+  type IndicatorMap,
 } from '@/services/dashboardValues';
+import type { DashboardIndicator } from '@/services/api';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusPill } from '@/components/ui/StatusPill';
-import { RingGauge } from '@/components/ui/RingGauge';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { useReducedMotion } from '@/hooks/useChrono';
+import { IndicatorProvenance } from '@/components/ui/IndicatorProvenance';
+import { HazardEvidencePanel } from '@/components/views/HazardEvidencePanel';
+import { AnatomyViewport } from '@/components/anatomy/AnatomyViewport';
+
+function EvidenceMetricCard({
+  id,
+  label,
+  indicators,
+}: {
+  id: string;
+  label: string;
+  indicators: IndicatorMap;
+}) {
+  const indicator: DashboardIndicator | undefined = indicators.get(id);
+  const value = fmtValue(indicator?.value);
+  const freshness = indicator?.data_status ?? indicator?.status ?? 'no_data';
+
+  return (
+    <GlassCard padding="sm" className="flex min-w-0 flex-col gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-1">
+        <span className="text-[10px] font-mono uppercase text-[#94b0d1]">{label}</span>
+        <StatusPill
+          label={dataClassLabel(value == null ? null : indicator?.data_class)}
+          variant={value == null ? 'nodata' : dataClassVariant(indicator?.data_class)}
+          showDot={false}
+        />
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className="font-heading text-lg font-bold text-white">
+          {value ?? 'UNAVAILABLE'}
+        </span>
+        {value != null && indicator?.unit && (
+          <span className="text-[10px] font-mono text-[#00CFFF]">{indicator.unit}</span>
+        )}
+      </div>
+      <div className="text-[9px] font-mono text-gray-400">
+        {freshness.toUpperCase()} · {indicatorReferenceLabel(indicator)} ·{' '}
+        {thresholdStatusLabel(indicator?.threshold_status)}
+      </div>
+      <details className="mt-1 border-t border-white/10 pt-1">
+        <summary className="cursor-pointer text-[9px] font-mono text-[#00CFFF]">
+          Provenance
+        </summary>
+        <div className="pt-2">
+          <IndicatorProvenance indicator={indicator} />
+        </div>
+      </details>
+    </GlassCard>
+  );
+}
 
 export const CrewHealthView: React.FC = () => {
   const { selectedCrewId, setSelectedCrew, setSelectedMetric, setActiveNav, dashboard, dashboardStatus } =
     useMissionStore();
   const reducedMotion = useReducedMotion();
+  const [view3D, setView3D] = useState(false);
 
   // ─── Real backend resolution (values come from the IRCO API only) ─────────
   const indicatorMap = buildIndicatorMap(dashboard?.indicators);
@@ -48,14 +100,18 @@ export const CrewHealthView: React.FC = () => {
   const { text: levelText, variant: levelVariant } = globalLevelView(dashboard?.global?.level);
   const levelColor =
     level === 'green' ? '#22C55E' : level === 'amber' ? '#F59E0B' : level === 'red' ? '#FF2D55' : '#6b7280';
-  const fmt = (v: number | null | undefined) => (v === null || v === undefined ? null : String(Number(v)));
-  const indValue = (id: string) => fmt(indicatorMap.get(id)?.value ?? null);
+  const heartRateValue = indicatorMap.get('heart_rate')?.value;
+  const realHeartRate =
+    heartRateValue == null || !Number.isFinite(Number(heartRateValue))
+      ? null
+      : Number(heartRateValue);
 
   const subject: CrewMember = {
     id: 'a01',
     name: `Sujet ${dashboard?.subject_id ?? '—'}`,
     role: 'Sujet principal · démo mono-sujet',
-    status: level === 'red' ? 'monitoring' : 'healthy',
+    status:
+      level === 'green' ? 'healthy' : level === 'amber' || level === 'red' ? 'monitoring' : 'unavailable',
     statusColor: levelColor,
     initials: 'A1',
   };
@@ -63,13 +119,7 @@ export const CrewHealthView: React.FC = () => {
   const currentCrew: CrewMember = crewRoster.find((m) => m.id === selectedCrewId) ?? subject;
 
   const heartText = metricValueText(indicatorMap, 'heart-rate');
-  const envValue = (id: string, max: number) => {
-    const v = indicatorMap.get(id)?.value;
-    return v === null || v === undefined ? null : Number(v);
-  };
-  const radiation = envValue('radiation_dose_daily', 30);
-  const co2 = envValue('co2_cabin', 5000);
-  const stress = envValue('stress_score', 100);
+  const heartIndicator = indicatorMap.get('heart_rate');
   const missionDay = dashboard?.mission?.mission_day ?? null;
 
   const [activeZone, setActiveZone] = useState<'cardiac' | 'cranial' | 'pulmonary' | null>(null);
@@ -100,26 +150,20 @@ export const CrewHealthView: React.FC = () => {
 
   const handleVitalCardClick = (metricId: string) => {
     setSelectedMetric(metricId);
-    setActiveNav('mission-overview');
+    if (metricId === 'heart-rate') {
+      setActiveNav('cardiovascular');
+    } else {
+      setActiveNav('mission-overview');
+    }
   };
 
   // Selected crew member object
   // (currentCrew derived above from the single API subject)
 
-  // Muscle & Bone Loss Chart Data
-  const muscleBoneData = [
-    { day: 'D1', muscle: 100, bone: 100 },
-    { day: 'D30', muscle: 98, bone: 99 },
-    { day: 'D60', muscle: 96, bone: 98 },
-    { day: 'D90', muscle: 94, bone: 97 },
-    { day: 'D120', muscle: 92, bone: 96 },
-    { day: 'D137', muscle: 91, bone: 95.5 },
-  ];
-
   const getVitalIcon = (name: string) => {
     switch (name) {
       case 'Heart':
-        return <Heart className="w-4 h-4 text-[#FF2D55] animate-pulse" />;
+        return <Heart className={`w-4 h-4 text-[#FF2D55] ${reducedMotion ? '' : 'animate-pulse'}`} />;
       case 'Droplets':
         return <Droplets className="w-4 h-4 text-[#00CFFF]" />;
       case 'Activity':
@@ -134,13 +178,16 @@ export const CrewHealthView: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-[calc(100vh-72px)] flex flex-col justify-between p-4 lg:p-6 overflow-hidden select-none">
+    <div className="relative w-full min-h-[calc(100vh-72px)] flex flex-col gap-3 p-4 lg:p-6 overflow-y-auto select-none">
       
       {/* Top Banner (Medical Truth Rule) */}
-      <div className="flex items-center justify-between z-20 px-2 -mb-1">
+      <div className="flex items-center justify-between z-20 px-2 shrink-0">
         <div className="flex items-center gap-2">
-          <StatusPill label="DATA: SYNTHETIC / SIMULATED" variant="synthetic" showDot />
-          <StatusPill label="THRESHOLD: ILLUSTRATIVE" variant="provisional" showDot />
+          <StatusPill
+            label={`DATA: ${dataClassLabel(dashboard?.data_class)}`}
+            variant={dataClassVariant(dashboard?.data_class)}
+            showDot
+          />
         </div>
         <div className="text-[11px] font-mono text-cyan-400/80 bg-[#081A30]/80 px-3 py-1 rounded-full border border-[#00CFFF]/25">
           Aide à la décision, pas un diagnostic.
@@ -148,7 +195,7 @@ export const CrewHealthView: React.FC = () => {
       </div>
 
       {/* ─── Upper Grid: Left Crew List, Center Hologram, Right 5 Vitals ────── */}
-      <div className="relative flex-1 grid grid-cols-1 lg:grid-cols-[250px_1fr_310px] xl:grid-cols-[270px_1fr_330px] gap-6 items-center min-h-0 py-2">
+      <div className="relative flex-1 grid grid-cols-1 lg:grid-cols-[250px_1fr_310px] xl:grid-cols-[270px_1fr_330px] gap-6 items-center min-h-[680px] py-2">
 
         {/* 1. Left Panel: Crew Member Selection */}
         <div className="h-full max-h-[460px] flex flex-col justify-between z-20">
@@ -199,8 +246,8 @@ export const CrewHealthView: React.FC = () => {
                       </div>
 
                       <StatusPill
-                        label={member.status === 'healthy' ? 'OK' : 'ATTN'}
-                        variant={member.status === 'healthy' ? 'nominal' : 'warning'}
+                        label={level === 'no_data' ? 'UNAVAILABLE' : level.toUpperCase()}
+                        variant={levelVariant}
                         showDot
                       />
                     </button>
@@ -213,7 +260,7 @@ export const CrewHealthView: React.FC = () => {
             <div className="p-3 rounded-xl bg-white/5 border border-[#00CFFF]/20 text-[11px] font-mono space-y-1">
               <div className="text-[#00CFFF] font-bold">SUJET: {currentCrew.name}</div>
               <div className="text-gray-300">
-                Vigilance: {sleeping ? '…' : levelText} · {dashboard?.data_class?.toUpperCase() ?? '…'}
+                Vigilance: {sleeping ? '…' : levelText} · {dataClassLabel(dashboard?.data_class)}
               </div>
               <div className="text-gray-400">Mission Day: {missionDay ?? '—'}</div>
             </div>
@@ -226,9 +273,50 @@ export const CrewHealthView: React.FC = () => {
           onMouseMove={handleMouseMove}
           style={{ perspective: 1000 }}
         >
+          {/* Top Switcher: 2D Hologram vs 3D X-Ray Explorer */}
+          <div className="absolute top-2 z-40 flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-[#00CFFF]/30 bg-[#081A30]/85 p-0.5 shadow-lg backdrop-blur-md">
+              <button
+                type="button"
+                onClick={() => setView3D(false)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-mono transition-all cursor-pointer ${
+                  !view3D
+                    ? 'bg-[#00CFFF]/25 text-white font-bold shadow-[0_0_10px_rgba(0,207,255,0.4)]'
+                    : 'text-[#94b0d1] hover:text-white'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5 text-[#00CFFF]" />
+                <span>2D Schéma</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setView3D(true)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-mono transition-all cursor-pointer ${
+                  view3D
+                    ? 'bg-[#00CFFF]/25 text-white font-bold shadow-[0_0_10px_rgba(0,207,255,0.4)]'
+                    : 'text-[#94b0d1] hover:text-white'
+                }`}
+              >
+                <Atom className="w-3.5 h-3.5 text-[#00CFFF]" />
+                <span>3D Mannequin</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveNav('anatomy')}
+              title="Ouvrir l'Explorateur 3D complet avec commandes tomographiques"
+              className="flex items-center gap-1 rounded-lg border border-[#00CFFF]/20 bg-[#081A30]/70 px-2.5 py-1 text-xs font-mono text-[#00CFFF] hover:bg-[#00CFFF]/20 hover:text-white transition-colors cursor-pointer"
+            >
+              <span>Plein Écran 3D</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           {/* Concentric Rotating Holographic Background Rings */}
-          <div className="absolute w-[440px] h-[440px] rounded-full border border-[#00CFFF]/15 animate-[spin_60s_linear_infinite] pointer-events-none" />
-          <div className="absolute w-[360px] h-[360px] rounded-full border border-dashed border-[#00CFFF]/25 animate-[spin_40s_linear_infinite_reverse] pointer-events-none" />
+          <div className={`absolute w-[440px] h-[440px] rounded-full border border-[#00CFFF]/15 ${reducedMotion ? '' : 'animate-[spin_60s_linear_infinite]'} pointer-events-none`} />
+          <div className={`absolute w-[360px] h-[360px] rounded-full border border-dashed border-[#00CFFF]/25 ${reducedMotion ? '' : 'animate-[spin_40s_linear_infinite_reverse]'} pointer-events-none`} />
 
           {/* Dotted Grid Floor (rotateX 70deg) */}
           <div
@@ -251,12 +339,48 @@ export const CrewHealthView: React.FC = () => {
               opacity: bodyFlash ? 0.4 : 1,
             }}
             transition={{
-              y: { duration: 5, repeat: Infinity, ease: 'easeInOut' },
+              y: { duration: 5, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' },
               opacity: { duration: 0.2 },
             }}
           >
-            {/* SVG Holographic Human Body Silhouette */}
-            <div className="relative w-52 h-[340px] flex items-center justify-center">
+            {view3D ? (
+              /* 3D WebGL Procedural Mannequin Viewport */
+              <div className="relative w-64 h-[350px] flex items-center justify-center rounded-2xl overflow-hidden border border-cyan-400/20 bg-[#070e1c]/80 shadow-[0_0_25px_rgba(0,207,255,0.25)]" data-testid="crew-view-3d">
+                <AnatomyViewport
+                  layers={{
+                    skeletal: true,
+                    organs: true,
+                    muscular: false,
+                    cardiovascular: true,
+                    nervous: true,
+                    skin: true,
+                  }}
+                  heartRateBpm={realHeartRate}
+                  flowSpeed={0}
+                  cameraPreset="anterior"
+                  presetTrigger={0}
+                  selectedPartId={activeZone === 'cardiac' ? 'heart' : activeZone === 'cranial' ? 'brain' : null}
+                  hideChrome={true}
+                  onSelectPart={(partId) => {
+                    if (partId === 'heart') setActiveNav('cardiovascular');
+                    else if (partId === 'brain') setActiveNav('neurological');
+                    else if (partId === 'lungs') setActiveNav('respiratory');
+                  }}
+                  onHoverPart={(partId) => {
+                    if (partId === 'heart') setActiveZone('cardiac');
+                    else if (partId === 'brain') setActiveZone('cranial');
+                    else if (partId === 'lungs') setActiveZone('pulmonary');
+                    else setActiveZone(null);
+                  }}
+                  onResetAnterior={() => {}}
+                />
+              </div>
+            ) : (
+              /* SVG Holographic Human Body Silhouette */
+              <div className="relative w-52 h-[340px] flex items-center justify-center">
+                <p className="absolute -bottom-5 z-10 w-64 text-center text-[9px] font-mono text-gray-400">
+                  Schéma illustratif; les régions ne représentent pas une mesure de capteur.
+                </p>
               <svg
                 viewBox="0 0 200 360"
                 className="w-full h-full filter drop-shadow-[0_0_15px_rgba(0,207,255,0.7)]"
@@ -319,8 +443,8 @@ export const CrewHealthView: React.FC = () => {
                   onMouseEnter={() => setActiveZone('cardiac')}
                   onMouseLeave={() => setActiveZone(null)}
                 >
-                  <circle r="8" fill="#FF2D55" className="animate-ping opacity-75" />
-                  <circle r="5" fill="#FF2D55" stroke="#fff" strokeWidth="1" />
+                  <circle r="8" fill="#00CFFF" opacity="0.25" />
+                  <circle r="5" fill="#00CFFF" stroke="#fff" strokeWidth="1" />
                 </g>
               </svg>
 
@@ -331,22 +455,34 @@ export const CrewHealthView: React.FC = () => {
                   filter: 'blur(2px)',
                 }}
               />
-            </div>
+              </div>
+            )}
 
             {/* ─── Floating Callout 1: Cardiac Activity (Left) ──────────────── */}
             <motion.div
-              animate={{ y: [0, -8, 0] }}
-              transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute -left-36 top-16 z-30"
+              animate={{ y: reducedMotion ? 0 : [0, -8, 0] }}
+              transition={{ duration: 3.5, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }}
+              className="absolute -left-36 top-16 z-30 cursor-pointer"
+              onClick={() => setActiveNav('cardiovascular')}
+              title="Cliquer pour isoler le système cardiovasculaire en 3D"
             >
-              <GlassCard padding="sm" className="w-44 border-[#FF2D55]/50 bg-[#081A30]/85">
+              <GlassCard
+                padding="sm"
+                className="w-44 border-[#FF2D55]/50 bg-[#081A30]/85 hover:border-[#FF2D55] transition-colors cursor-pointer"
+                onClick={() => setActiveNav('cardiovascular')}
+              >
                 <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#FF2D55] font-bold">
                   <Heart className="w-3.5 h-3.5 animate-pulse" />
                   <span>ACTIVITÉ CARDIAQUE</span>
                 </div>
-                <div className="text-base font-heading font-extrabold text-white mt-0.5" data-testid="callout-heart">
+                <div className="flex items-center gap-1 text-base font-heading font-extrabold text-white mt-0.5" data-testid="callout-heart">
                   {sleeping ? '···' : (heartText ?? 'NO DATA')}{' '}
                   {heartText ? <span className="text-[10px] font-mono text-gray-400">BPM</span> : null}
+                  <StatusPill
+                    label={dataClassLabel(heartText ? heartIndicator?.data_class : null)}
+                    variant={dataClassVariant(heartText ? heartIndicator?.data_class : null)}
+                    showDot={false}
+                  />
                 </div>
                 <div className="text-[9px] font-mono" style={{ color: levelColor }}>
                   {sleeping ? '…' : `Vigilance: ${levelText}`}
@@ -362,8 +498,8 @@ export const CrewHealthView: React.FC = () => {
 
             {/* ─── Floating Callout 2: Body Status: Stable (Right) ──────────── */}
             <motion.div
-              animate={{ y: [0, -10, 0] }}
-              transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
+              animate={{ y: reducedMotion ? 0 : [0, -10, 0] }}
+              transition={{ duration: 4.2, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut', delay: 0.6 }}
               className="absolute -right-36 top-32 z-30"
             >
               <GlassCard padding="sm" className="w-44 border-[#00CFFF]/50 bg-[#081A30]/85">
@@ -426,9 +562,27 @@ export const CrewHealthView: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Sparkline data={metricHistory(indicatorMap, card.id).map((h) => h.value)} color={card.color} width={65} height={20} />
+                    {metricHistory(indicatorMap, card.id).length > 0 ? (
+                      <Sparkline data={metricHistory(indicatorMap, card.id).map((h) => h.value)} color={card.color} width={65} height={20} />
+                    ) : (
+                      <span className="text-[8px] font-mono text-gray-500">NO HISTORY</span>
+                    )}
                     <ChevronRight className="w-3.5 h-3.5 text-[#00CFFF] opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
+                </div>
+                <div className="mt-1 flex justify-end">
+                  {(() => {
+                    const indicator = indicatorForMetric(indicatorMap, card.id);
+                    const value = metricValueText(indicatorMap, card.id);
+                    return (
+                      <StatusPill
+                        label={dataClassLabel(value ? indicator?.data_class : null)}
+                        variant={dataClassVariant(value ? indicator?.data_class : null)}
+                        showDot={false}
+                        className="text-[8px] px-1.5 py-0"
+                      />
+                    );
+                  })()}
                 </div>
               </GlassCard>
             </motion.div>
@@ -436,119 +590,33 @@ export const CrewHealthView: React.FC = () => {
         </div>
       </div>
 
-      {/* ─── Bottom Row: Radiation, Muscle/Bone, Hydration, Stress, Timeline ─ */}
-      <div className="relative z-20 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
-        
-        {/* 1. Radiation Gauge (Semicircle 12.4 / 30 mSv) */}
-        <GlassCard padding="sm" className="flex flex-col items-center justify-center text-center">
-          <RingGauge
-            value={radiation ?? 0}
-            max={30}
-            size={70}
-            strokeWidth={6}
-            color={radiation === null ? '#6b7280' : '#F59E0B'}
-            semi
-            unit="mSv"
+      {/* Mission context uses only indicators and mission metadata from the API. */}
+      <div className="relative z-20 grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2 xl:grid-cols-4">
+        <EvidenceMetricCard id="radiation_dose_daily" label="Dose de radiation" indicators={indicatorMap} />
+        <EvidenceMetricCard id="xray_flux" label="Flux X" indicators={indicatorMap} />
+        <EvidenceMetricCard id="co2_cabin" label="CO₂ cabine" indicators={indicatorMap} />
+        <EvidenceMetricCard id="stress_score" label="Score de stress" indicators={indicatorMap} />
+        <GlassCard padding="sm" className="sm:col-span-2 xl:col-span-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[11px] font-mono font-bold uppercase text-white">
+              Repère temporel de mission
+            </h2>
+            <span className="text-xs font-mono text-[#00CFFF]">
+              Jour {missionDay ?? 'UNAVAILABLE'}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] font-mono text-gray-400">
+            Dernière mise à jour API:{' '}
+            {observationTimeLabel(dashboard?.last_updated)}
+            {' · '}Aucun événement de mission n’est fourni dans cet instantané.
+          </p>
+        </GlassCard>
+        <div className="sm:col-span-2 xl:col-span-4">
+          <HazardEvidencePanel
+            hazards={dashboard?.hazards}
+            indicators={indicatorMap}
           />
-          <div className="text-[10px] font-mono text-[#94b0d1] uppercase mt-1">Dose Radiation</div>
-          <div className="text-[9px] font-mono" style={{ color: radiation === null ? '#9ca3af' : '#22C55E' }}>
-            {sleeping ? '···' : radiation === null ? 'NO DATA / 30 mSv' : `${radiation} / 30 mSv`}
-          </div>
-        </GlassCard>
-
-        {/* 2. Muscle & Bone Loss Chart (Recharts) */}
-        <GlassCard padding="sm" className="flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[10px] font-mono text-[#94b0d1]">
-            <span>Densité Musculaire/Osseuse</span>
-            <span className="text-[#A78BFA] font-bold">PROJECTION</span>
-          </div>
-          <div className="h-14 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={muscleBoneData}>
-                <XAxis dataKey="day" hide />
-                <YAxis hide domain={[90, 102]} />
-                <Tooltip
-                  content={({ payload }) => (
-                    <div className="bg-[#081A30] border border-[#00CFFF]/40 p-1 rounded text-[10px] font-mono text-white">
-                      {payload && payload[0] && `${payload[0].value}%`}
-                    </div>
-                  )}
-                />
-                <Line type="monotone" dataKey="muscle" stroke="#A78BFA" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="bone" stroke="#00CFFF" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex justify-between text-[9px] font-mono text-gray-400">
-            <span className="text-[#A78BFA]">■ Muscle</span>
-            <span className="text-[#00CFFF]">■ Os</span>
-            <span className="text-gray-500">illustratif</span>
-          </div>
-        </GlassCard>
-
-        {/* 3. CO₂ Cabin (real indicator or NO DATA) */}
-        <GlassCard padding="sm" className="flex flex-col items-center justify-center">
-          <RingGauge
-            value={co2 ?? 0}
-            max={5000}
-            size={60}
-            strokeWidth={5}
-            color={co2 === null ? '#6b7280' : '#00CFFF'}
-            label="CO₂ Cabine"
-            unit="ppm"
-          />
-          <div className="text-[9px] font-mono mt-0.5" style={{ color: co2 === null ? '#9ca3af' : '#22C55E' }}>
-            {sleeping ? '···' : co2 === null ? 'NO DATA' : `${co2} ppm (seuil 5000)`}
-          </div>
-        </GlassCard>
-
-        {/* 4. Stress (real indicator or NO DATA) */}
-        <GlassCard padding="sm" className="flex flex-col items-center justify-center">
-          <RingGauge
-            value={stress ?? 0}
-            max={100}
-            size={60}
-            strokeWidth={5}
-            color={stress === null ? '#6b7280' : '#F59E0B'}
-            label="Niveau Stress"
-            unit="/100"
-          />
-          <div className="text-[9px] font-mono mt-0.5" style={{ color: stress === null ? '#9ca3af' : '#22C55E' }}>
-            {sleeping ? '···' : stress === null ? 'NO DATA' : `Score ${stress}/100`}
-          </div>
-        </GlassCard>
-
-        {/* 5. Mission Timeline (real mission_day from the API) */}
-        <GlassCard padding="sm" className="col-span-2 md:col-span-1 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[10px] font-mono text-[#94b0d1]">
-            <span>Timeline Mission</span>
-            <span className="text-[#00CFFF] font-bold">D+{missionDay ?? '—'}</span>
-          </div>
-
-          <div className="relative flex items-center justify-between my-2 px-1">
-            <div className="absolute inset-x-2 h-0.5 bg-white/10" />
-            {[0, 1, 2, 3, 4, 5].map((offset) => {
-              const day = (missionDay ?? 1) + offset;
-              const isCurrent = offset === 0;
-              return (
-                <div key={offset} className="relative z-10 flex flex-col items-center">
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full ${
-                      isCurrent
-                        ? 'bg-[#00CFFF] ring-4 ring-[#00CFFF]/30 shadow-[0_0_8px_#00CFFF]'
-                        : 'bg-white/20'
-                    }`}
-                  />
-                  <span className="text-[9px] font-mono text-gray-400 mt-1">D{day}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="text-[9px] font-mono text-center text-[#22C55E]">
-            {dashboard?.mission?.mode === 'autonomous' ? 'Mode autonome · démo a01' : '—'}
-          </div>
-        </GlassCard>
+        </div>
       </div>
     </div>
   );
