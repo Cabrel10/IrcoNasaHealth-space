@@ -58,6 +58,7 @@ export const CockpitView: React.FC = () => {
     selectedMetricId,
     setSelectedMetric,
     setActiveNav,
+    activeNavId,
     dashboard,
     dashboardStatus,
     dashboardDay,
@@ -87,6 +88,14 @@ export const CockpitView: React.FC = () => {
     setCurrentIndex(normalizedIdx);
     setRotationAngle(-normalizedIdx * 60);
   }, []);
+
+  // Sidebar sections drive the cylinder: Sleep & Fatigue → sleep-quality card.
+  useEffect(() => {
+    if (activeNavId === 'sleep-fatigue') {
+      const idx = CYLINDER_METRICS.findIndex((m) => m.id === 'sleep-quality');
+      if (idx >= 0) rotateToIndex(idx);
+    }
+  }, [activeNavId, rotateToIndex]);
 
   const handleNext = useCallback(() => {
     rotateToIndex(currentIndex + 1);

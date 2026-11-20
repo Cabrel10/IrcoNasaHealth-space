@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronsRight, Atom, Menu, X } from 'lucide-react';
 import {
@@ -131,6 +131,8 @@ export function CurvedSidebar() {
   const { activeNavId, setActiveNav, dashboard } = useMissionStore();
   const reducedMotion = useReducedMotion();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Whether the current press already activated navigation via pointerdown.
+  const pressedRef = useRef(false);
   const alertCount = dashboard?.active_alerts?.length ?? 0;
 
   const HUD_NAV_ITEMS = useMemo(
@@ -297,7 +299,7 @@ export function CurvedSidebar() {
         {/* 3. Couche de navigation : contenus non déformés alignés dans les marges de sécurité */}
         <nav
           aria-label="Medical Telemetry Modules"
-          className="relative z-10 flex h-full flex-col"
+          className="pointer-events-none relative z-10 flex h-full flex-col"
           style={{
             paddingTop: `${topPadPct.toFixed(2)}%`,
             paddingBottom: `${bottomPadPct.toFixed(2)}%`,
@@ -305,7 +307,7 @@ export function CurvedSidebar() {
           }}
         >
           <ul
-            className="flex h-full flex-col justify-between"
+            className="pointer-events-none flex h-full flex-col justify-between"
             style={{ transformStyle: 'preserve-3d' }}
           >
             {HUD_NAV_ITEMS.map((item, index) => {
@@ -315,7 +317,7 @@ export function CurvedSidebar() {
               return (
                 <li
                   key={item.id}
-                  className="flex flex-1 items-center py-[3px]"
+                  className="pointer-events-none flex flex-1 items-center py-[3px]"
                   style={{
                     paddingLeft: inset.paddingLeftPct,
                     paddingRight: inset.paddingRightPct,
@@ -325,8 +327,23 @@ export function CurvedSidebar() {
                   <motion.button
                     type="button"
                     data-testid={`nav-${item.id}`}
-                    onClick={() => {
+                    // Navigate on press, not on release: the holographic hull
+                    // rotates continuously and framer-motion re-renders during
+                    // hover/tap, which can swallow a fast click between
+                    // pointerdown and pointerup. Activating on pointerdown
+                    // guarantees one press = one navigation.
+                    onPointerDown={() => {
+                      pressedRef.current = true;
                       setActiveNav(item.id);
+                      setMobileOpen(false);
+                    }}
+                    onClick={() => {
+                      // Keyboard activation (Enter/Space) fires click without
+                      // pointerdown — still needs to navigate.
+                      if (!pressedRef.current) {
+                        setActiveNav(item.id);
+                      }
+                      pressedRef.current = false;
                       setMobileOpen(false);
                     }}
                     aria-current={isActive ? 'page' : undefined}
@@ -364,7 +381,7 @@ export function CurvedSidebar() {
                         : 'transparent',
                     }}
                     className={[
-                      'group relative flex h-full min-h-[42px] w-full items-center justify-between gap-2 px-3 py-1.5 text-left transition-colors duration-150',
+                      'pointer-events-auto group relative flex h-full min-h-[42px] w-full items-center justify-between gap-2 px-3 py-1.5 text-left transition-colors duration-150',
                       'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#00F0FF] focus-visible:ring-offset-1 focus-visible:ring-offset-[#02091F]',
                       isActive
                         ? 'border-[1.5px] border-[#00F0FF]'

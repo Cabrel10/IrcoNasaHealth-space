@@ -1,6 +1,6 @@
 import React from 'react';
 
-export interface GlassCardProps {
+export interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   active?: boolean;
   className?: string;
@@ -23,11 +23,13 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   padding = 'md',
   onClick,
   style,
+  ...rest
 }) => {
   return (
     <div
       onClick={onClick}
       style={style}
+      {...rest}
       className={`relative overflow-hidden rounded-2xl md:rounded-3xl transition-all duration-300 ${paddingMap[padding]} ${
         active
           ? 'bg-[#081A30]/85 border-[#00CFFF] shadow-[inset_0_0_25px_rgba(0,207,255,0.25),0_8px_36px_rgba(0,207,255,0.2)]'

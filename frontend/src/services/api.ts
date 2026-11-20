@@ -30,7 +30,7 @@ export interface DashboardIndicator {
   data_status: string;
   history: Array<{ timestamp: string; value: number }>;
   baseline: { mean: number; median: number; sample_count: number; standard_deviation: number } | null;
-  trend?: { direction: string; slope_per_day: number } | null;
+  trend?: { direction: string; slope_per_day: number | null } | null;
   thresholds: {
     reference_min?: number | null;
     reference_max?: number | null;
@@ -152,7 +152,7 @@ export interface IndicatorHistory {
   unit: string;
   data_class: string;
   baseline: { mean: number; median: number; sample_count: number; standard_deviation: number } | null;
-  trend: { direction: string; slope_per_day: number } | null;
+  trend: { direction: string; slope_per_day: number | null } | null;
   thresholds: { reference_min: number; reference_max: number; reference_source: string; status: string } | null;
   data_quality: { valid: number; suspect: number; total: number };
   measurements: Array<{ timestamp: string; value: number; quality: string; source: string }>;

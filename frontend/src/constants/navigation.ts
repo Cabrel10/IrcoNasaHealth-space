@@ -16,11 +16,3 @@ export const COCKPIT_NAV_ITEMS: NavItem[] = [
   { id: 'medical-alerts', label: 'Medical Alerts', iconName: 'AlertTriangle' },
   { id: 'history-reports', label: 'History & Reports', iconName: 'FileText' },
 ];
-
-export const CREW_NAV_ITEMS: NavItem[] = [
-  { id: 'crew-health', label: 'Vitals', iconName: 'Activity' },
-  { id: 'anatomy', label: '3D Anatomy', iconName: 'Atom' },
-  { id: 'stats', label: 'Statistics', iconName: 'BarChart3' },
-  { id: 'database', label: 'Database', iconName: 'Database' },
-  { id: 'settings', label: 'Settings', iconName: 'Settings' },
-];

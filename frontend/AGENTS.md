@@ -267,3 +267,39 @@ Je prends la tâche : étendre le générateur backend pour inclure SpO₂ dans 
 **Agent :** Agent FS-01 · **Tâche :** Génération données SpO₂ et preuve visuelle alerte rouge jour 117
 Tâche terminée. Fichiers modifiés : `crates/irco-api/src/demo.rs` (ajout indicateur `spo2` aux 3 scénarios : A-01 avec formule progressive `98.0 - 10.0 × progress`, Nominal/Dropout à 98% fixe), `frontend/tests/e2e/spo2-red-alert-capture.spec.ts` (nouveau test de capture). Compilation : `cargo build --bin irco-api` → OK (42.8s). Backend redémarré sur port 3081. Tests : **npx playwright test spo2-red-alert-capture → 2/2 PASSED (29.3s)**. Validations API : jour 117 → `spo2.value = 90.4%` (< seuil 92%), `global.level = "red"`, `triggered_rules = ["HR_PERSISTENT_003", "HR_TREND_002", "SPO2_THRESHOLD_001"]`. Captures créées : `test-results/spo2-red-alert-day117-full.png` (21 KB, vue complète dashboard), `test-results/spo2-card-90percent-red.png` (2.4 KB, zoom carte SpO₂). Documentation : `EVIDENCE_SPO2_RED_ALERT.md` (preuve complète avec JSON API, formule génération, captures, commandes reproduction). Notes : règle SPO2_THRESHOLD_001 existait déjà dans `rules/rules.json` (seuil min 92%), frontend affichait déjà SpO₂ dans CockpitView. Limitation : source documentaire S019 non implémentée (endpoint `/api/v1/sources/{id}` retourne 404, à ajouter au corpus `irco-knowledge` si besoin).
 
+
+### 2026-11-16 00:15 — Début
+**Agent :** GLM (agent backend/session IRCO, coordinateur) · **Tâche :** navigation 100 % cliquable + correction « no_data partout » + e2e
+Je prends la tâche : enrichir la démo backend à 17/18 indicateurs, router
+`medical-alerts` et `history-reports` vers leurs vues réelles, propager les
+props dans `GlassCard`, corriger l'id d'indicateur `xray_flux` →
+`xray_flux_short`, réécrire `app-real-data.spec.ts` (14 tests). Portée :
+`crates/irco-api/src/{demo,lib}.rs`, `frontend/src/…` (DashboardShell,
+GlassCard, CockpitView, CrewHealthView, navigation, AlertsView, HistoryView),
+`tests/e2e/app-real-data.spec.ts`, `frontdev.md` (non committé).
+
+### 2026-11-20 00:20 — Fin
+**Agent :** GLM (agent backend/session IRCO, coordinateur) · **Tâche :** navigation 100 % cliquable + correction « no_data partout » + e2e
+Tâche terminée. Fichiers : `crates/irco-api/src/demo.rs` (17/18 indicateurs
+par scénario), `crates/irco-api/src/lib.rs` (active_count==17, assertions co2/xray),
+`frontend/src/components/layout/DashboardShell.tsx` (routes medical-alerts →
+AlertsView, history-reports → HistoryView), `frontend/src/components/layout/
+CurvedSidebar.tsx` (navigation au pointerdown + couches décoratives
+pointer-events-none + boutons pointer-events-auto), `frontend/src/components/
+ui/GlassCard.tsx` (props HTML propagées), `frontend/src/components/views/
+CockpitView.tsx` (sleep-fatigue → carte sleep-quality), `frontend/src/components/
+views/CrewHealthView.tsx` (id `xray_flux` → `xray_flux_short` + testid evidence),
+`frontend/src/components/views/{AlertsView,HistoryView}.tsx` (nouvelles vues API),
+`frontend/src/constants/navigation.ts` (CREW_NAV_ITEMS inutilisé supprimé),
+`frontend/src/services/api.ts` (trend.slope_per_day nullable),
+`frontend/tests/e2e/app-real-data.spec.ts` (14 tests, helper navClick).
+Tests : `cargo test --workspace` → 88 passed 0 failed; `tests/contracts_test.py`
+→ OK; `npx tsc --noEmit` → 0 erreur; `npm run build` → OK; `npx playwright test
+app-real-data curved-sidebar-visual` → **24 passed (3.2m)**. Bugs réels corrigés
+en route : (1) clic avalé par les `<li>`/`<ul>` transparents en projection 3D →
+seuls les boutons sont interactifs; (2) crash `HistoryView` sur
+`trend.slope_per_day = null` au jour 1; (3) `xray_flux` ne matchait aucun
+indicateur (`xray_flux_short`). Notes : au centre géométrique exact d'un item,
+le hit-test 3D Chromium peut renvoyer le conteneur du hull — le helper e2e
+presse la zone icône (geste réel) et vérifie `aria-current`; `frontdev.md` §13
+documente l'état et les suites. `xray_flux_short` reste volontairement no_data.

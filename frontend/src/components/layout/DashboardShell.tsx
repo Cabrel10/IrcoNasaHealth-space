@@ -7,6 +7,8 @@ import { IntroSequence } from '@/components/layout/IntroSequence';
 import { CockpitView } from '@/components/views/CockpitView';
 import { CrewHealthView } from '@/components/views/CrewHealthView';
 import { AnatomyView } from '@/components/views/AnatomyView';
+import { AlertsView } from '@/components/views/AlertsView';
+import { HistoryView } from '@/components/views/HistoryView';
 import { useMissionStore } from '@/stores/useMissionStore';
 
 export const DashboardShell: React.FC = () => {
@@ -106,6 +108,30 @@ export const DashboardShell: React.FC = () => {
               className="w-full h-full"
             >
               <AnatomyView initialSystem="organs" initialPartId="lungs" />
+            </motion.div>
+          ) : activeNavId === 'medical-alerts' ? (
+            /* VIEW D: MEDICAL ALERTS (real alerts from GET /dashboard) */
+            <motion.div
+              key="alerts-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <AlertsView />
+            </motion.div>
+          ) : activeNavId === 'history-reports' ? (
+            /* VIEW E: HISTORY & REPORTS (per-indicator /history series) */
+            <motion.div
+              key="history-view"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.4 } }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full h-full"
+            >
+              <HistoryView />
             </motion.div>
           ) : (
             /* VIEW A: COCKPIT / MISSION OVERVIEW */

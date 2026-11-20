@@ -78,6 +78,39 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                     ("sleep_duration", round1(7.8 - 3.6 * progress), "hours"),
                     ("fatigue_score", round1(2.0 + 6.0 * progress), "score"),
                     ("spo2", round1(98.0 - 10.0 * progress), "%"),
+                    (
+                        "blood_pressure_systolic",
+                        round1(118.0 + 24.0 * progress),
+                        "mmHg",
+                    ),
+                    (
+                        "blood_pressure_diastolic",
+                        round1(76.0 + 14.0 * progress),
+                        "mmHg",
+                    ),
+                    ("body_temperature", round1(36.6 + 1.4 * progress), "degC"),
+                    (
+                        "respiratory_rate",
+                        round1(14.0 + 7.0 * progress),
+                        "breaths/min",
+                    ),
+                    ("sleep_quality", round1(90.0 - 42.0 * progress), "score"),
+                    ("stress_score", round1(20.0 + 45.0 * progress), "score"),
+                    ("mood_score", round1(7.5 - 3.0 * progress), "score"),
+                    ("co2_cabin", round1(420.0 + 430.0 * progress), "ppm"),
+                    (
+                        "radiation_dose_daily",
+                        round1(0.35 + 0.75 * progress),
+                        "mSv",
+                    ),
+                    ("temperature_iss", round1(21.5 + 1.0 * progress), "degC"),
+                    ("humidity_iss", round1(45.0), "percent"),
+                    ("solar_wind_speed", round1(380.0 + 120.0 * progress), "km/s"),
+                    (
+                        "exercise_duration",
+                        round1(60.0 - 20.0 * progress),
+                        "minutes",
+                    ),
                 ],
             )
         }
@@ -89,6 +122,19 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                 ("sleep_duration", 7.5, "hours"),
                 ("fatigue_score", 2.0, "score"),
                 ("spo2", 98.0, "%"),
+                ("blood_pressure_systolic", 118.0, "mmHg"),
+                ("blood_pressure_diastolic", 76.0, "mmHg"),
+                ("body_temperature", 36.6, "degC"),
+                ("respiratory_rate", 14.0, "breaths/min"),
+                ("sleep_quality", 90.0, "score"),
+                ("stress_score", 20.0, "score"),
+                ("mood_score", 7.5, "score"),
+                ("co2_cabin", 420.0, "ppm"),
+                ("radiation_dose_daily", 0.35, "mSv"),
+                ("temperature_iss", 21.5, "degC"),
+                ("humidity_iss", 45.0, "percent"),
+                ("solar_wind_speed", 380.0, "km/s"),
+                ("exercise_duration", 60.0, "minutes"),
             ],
         ),
         DemoScenario::Dropout => (
@@ -99,6 +145,19 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                 ("sleep_duration", 7.5, "hours"),
                 ("fatigue_score", 2.0, "score"),
                 ("spo2", 98.0, "%"),
+                ("blood_pressure_systolic", 118.0, "mmHg"),
+                ("blood_pressure_diastolic", 76.0, "mmHg"),
+                ("body_temperature", 36.6, "degC"),
+                ("respiratory_rate", 14.0, "breaths/min"),
+                ("sleep_quality", 90.0, "score"),
+                ("stress_score", 20.0, "score"),
+                ("mood_score", 7.5, "score"),
+                ("co2_cabin", 420.0, "ppm"),
+                ("radiation_dose_daily", 0.35, "mSv"),
+                ("temperature_iss", 21.5, "degC"),
+                ("humidity_iss", 45.0, "percent"),
+                ("solar_wind_speed", 380.0, "km/s"),
+                ("exercise_duration", 60.0, "minutes"),
             ],
         ),
     };
@@ -257,6 +316,11 @@ mod tests {
         assert!(values.contains(&("heart_rate", 108.0)));
         assert!(values.contains(&("sleep_duration", 4.2)));
         assert!(values.contains(&("fatigue_score", 8.0)));
+        assert!(values.contains(&("spo2", 88.0)));
+        assert!(values.contains(&("blood_pressure_systolic", 142.0)));
+        assert!(values.contains(&("body_temperature", 38.0)));
+        assert!(values.contains(&("co2_cabin", 850.0)));
+        assert!(values.contains(&("radiation_dose_daily", 1.1)));
         assert!(day
             .observations
             .iter()
@@ -285,9 +349,9 @@ mod tests {
     fn nominal_and_dropout_are_explicit_and_never_fill_missing_sensor_values() {
         let nominal = replay(DemoScenario::Nominal, 50).unwrap();
         let dropout = replay(DemoScenario::Dropout, 21).unwrap();
-        assert_eq!(nominal.observations.len(), 4);
+        assert_eq!(nominal.observations.len(), 17);
         assert!(nominal.missing_indicators.is_empty());
-        assert_eq!(dropout.observations.len(), 3);
+        assert_eq!(dropout.observations.len(), 16);
         assert_eq!(dropout.missing_indicators, vec!["heart_rate"]);
     }
 

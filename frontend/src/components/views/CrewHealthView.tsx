@@ -54,7 +54,7 @@ function EvidenceMetricCard({
   const freshness = indicator?.data_status ?? indicator?.status ?? 'no_data';
 
   return (
-    <GlassCard padding="sm" className="flex min-w-0 flex-col gap-1">
+    <GlassCard padding="sm" data-testid={`evidence-${id}`} className="flex min-w-0 flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-1">
         <span className="text-[10px] font-mono uppercase text-[#94b0d1]">{label}</span>
         <StatusPill
@@ -593,7 +593,7 @@ export const CrewHealthView: React.FC = () => {
       {/* Mission context uses only indicators and mission metadata from the API. */}
       <div className="relative z-20 grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2 xl:grid-cols-4">
         <EvidenceMetricCard id="radiation_dose_daily" label="Dose de radiation" indicators={indicatorMap} />
-        <EvidenceMetricCard id="xray_flux" label="Flux X" indicators={indicatorMap} />
+        <EvidenceMetricCard id="xray_flux_short" label="Flux X" indicators={indicatorMap} />
         <EvidenceMetricCard id="co2_cabin" label="CO₂ cabine" indicators={indicatorMap} />
         <EvidenceMetricCard id="stress_score" label="Score de stress" indicators={indicatorMap} />
         <GlassCard padding="sm" className="sm:col-span-2 xl:col-span-4">

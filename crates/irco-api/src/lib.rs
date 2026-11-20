@@ -5119,7 +5119,9 @@ mod tests {
                 .iter()
                 .filter(|indicator| indicator["status"] != "no_data")
                 .count();
-            assert!(active_count <= 8);
+            // The demo fills 17 of the 18 registry indicators; xray_flux_short
+            // stays missing on purpose so the UI keeps a real no_data case.
+            assert_eq!(active_count, 17);
             let heart_rate = dashboard["indicators"]
                 .as_array()
                 .unwrap()
@@ -5135,7 +5137,18 @@ mod tests {
                 .iter()
                 .find(|indicator| indicator["id"] == "co2_cabin")
                 .unwrap();
-            assert_eq!(co2["status"], "no_data");
+            // co2_cabin now carries synthetic values in the demo (420 → 850 ppm,
+            // inside the 0–5000 ppm rule) — assert the real series, not absence.
+            assert_eq!(co2["status"], "fresh");
+            let co2_value = co2["value"].as_f64().unwrap();
+            assert!((420.0..=850.0).contains(&co2_value));
+            let xray = dashboard["indicators"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|indicator| indicator["id"] == "xray_flux_short")
+                .unwrap();
+            assert_eq!(xray["status"], "no_data");
             assert!(dashboard["hazards"]
                 .as_array()
                 .unwrap()
