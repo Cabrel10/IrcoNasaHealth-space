@@ -31,8 +31,8 @@ export const HistoryView: React.FC = () => {
       indicatorId: (INDICATOR_IDS[m.id] ?? [])[0],
     })).filter((m) => m.indicatorId);
 
-    // xray_flux_short is intentionally absent from the demo: the row is a real
-    // API-backed NO DATA case, never a fabricated zero.
+    // Solar X-ray flux is part of the environment context (NOAA SWPC feed),
+    // shown as a real series like the other indicators.
     metrics.push({
       metricId: 'xray',
       label: 'X-Ray Flux',

@@ -66,15 +66,25 @@ test('day 1 shows heart_rate = 62 from the backend (never the old hardcoded 68)'
   await expect(page.getByText('DATA: SYNTHETIC')).toBeVisible();
 });
 
-test('no_data indicators are never rendered as 0', async ({ page }) => {
+test('demo cockpit shows no NO DATA card (all 18 indicators are filled)', async ({ page }) => {
   await page.goto(`${APP_BASE}/?day=117`);
-  // Day 1 values became real API series; the remaining honest no_data case is
-  // xray_flux_short (intentionally missing in the demo, on any day).
+  await expect(page.getByTestId('global-level-badge')).toHaveText('RED', { timeout: 15000 });
+  // The demo scenario fills every registry indicator: nothing may render as
+  // NO DATA or "···" once the dashboard has loaded.
+  await expect(page.getByText('NO DATA')).toHaveCount(0);
+  await expect(page.getByText('···')).toHaveCount(0);
+});
+
+test('crew health evidence cards show the real environment series (no UNAVAILABLE)', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.goto(`${APP_BASE}/?day=117`);
   await navClick(page, 'crew-health');
   const xray = page.getByTestId('evidence-xray_flux_short');
   await expect(xray).toBeVisible({ timeout: 15000 });
-  await expect(xray).toContainText('UNAVAILABLE');
-  // The missing sensor must never degrade into the number 0.
+  // xray_flux_short is now part of the synthetic demo (unit W/m2) and the
+  // card must show a real number, never UNAVAILABLE or a fabricated 0.
+  await expect(xray).toContainText('W/m2');
+  await expect(xray).not.toContainText('UNAVAILABLE');
   await expect(xray).not.toContainText(/^0$/);
 });
 
@@ -168,7 +178,7 @@ test('History & Reports view loads real per-indicator series from /history', asy
   expect(historyCalls.length).toBeGreaterThan(5);
 });
 
-test('History & Reports view keeps honest NO DATA before the mission window', async ({ page }) => {
+test('History & Reports view fills every row from /history (no NO DATA)', async ({ page }) => {
   test.setTimeout(90000);
   await page.goto(APP_BASE);
   await expect(page.getByTestId('global-level-badge')).toBeVisible({ timeout: 15000 });
@@ -176,10 +186,12 @@ test('History & Reports view keeps honest NO DATA before the mission window', as
 
   const xrayRow = page.getByTestId('history-xray');
   await expect(xrayRow).toBeVisible({ timeout: 20000 });
-  // xray_flux_short has no measurements in the demo: NO DATA, never 0.
-  await expect(page.getByTestId('history-value-xray')).toHaveText('NO DATA');
-  await expect(xrayRow).not.toContainText(/^0$/);
-  // Day 1 does have one seeded sample for heart_rate — never a fabricated 0.
+  // xray_flux_short is part of the demo now: its row shows a number with at
+  // least one sample, and the whole view contains no NO DATA cell.
+  await expect(page.getByTestId('history-value-xray')).not.toHaveText('NO DATA');
+  await expect(page.getByTestId('history-value-xray')).toHaveText(/^\d/);
+  await expect(page.getByText('NO DATA')).toHaveCount(0);
+  // Day 1 has one seeded sample for heart_rate — never a fabricated 0.
   await expect(page.getByTestId('history-value-heart-rate')).toHaveText('62');
 });
 

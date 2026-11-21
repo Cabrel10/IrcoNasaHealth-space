@@ -303,3 +303,18 @@ indicateur (`xray_flux_short`). Notes : au centre géométrique exact d'un item,
 le hit-test 3D Chromium peut renvoyer le conteneur du hull — le helper e2e
 presse la zone icône (geste réel) et vérifie `aria-current`; `frontdev.md` §13
 documente l'état et les suites. `xray_flux_short` reste volontairement no_data.
+
+### 2026-11-21 — Fin
+**Agent :** GLM (agent backend/session IRCO, coordinateur) · **Tâche :** zéro NO DATA dans la démo + corpus sources complet + outillage Colab
+Fichiers : `crates/irco-api/src/demo.rs` (xray_flux_short ajouté aux 3 scénarios,
+18/18 indicateurs), `crates/irco-api/src/lib.rs` (active_count==18, xray fresh
+dans 0–1e-4 W/m2), `data/corpus.jsonl` (NOAA SWPC + NASA OSDR EDA RR-1 ajoutés,
+11 documents), `frontend/src/components/views/HistoryView.tsx` (ligne X-Ray
+série réelle), `frontend/tests/e2e/app-real-data.spec.ts` (2 tests remplacés :
+aucun NO DATA/··· dans la démo, cartes environnement réelles), `scripts/
+check_colab.sh` (vérification statut/capacités/registration + probe assistant).
+Tests : `cargo test -p irco-api` 34 passed; `cargo test -p irco-knowledge`
+4 passed; assistant vérifié : NOAA SWPC et NASA OSDR cités avec leurs URLs;
+`npx playwright test app-real-data` → **15 passed (2.4m)**. Notes : Colab non
+enregistré au moment du test (`ai_available:false`, provider
+`extractive_fallback`) — le script documente la registration exacte.

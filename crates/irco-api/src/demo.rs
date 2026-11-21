@@ -106,6 +106,7 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                     ("temperature_iss", round1(21.5 + 1.0 * progress), "degC"),
                     ("humidity_iss", round1(45.0), "percent"),
                     ("solar_wind_speed", round1(380.0 + 120.0 * progress), "km/s"),
+                    ("xray_flux_short", 2.0e-6 + 4.3e-5 * progress, "W/m2"),
                     (
                         "exercise_duration",
                         round1(60.0 - 20.0 * progress),
@@ -134,6 +135,7 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                 ("temperature_iss", 21.5, "degC"),
                 ("humidity_iss", 45.0, "percent"),
                 ("solar_wind_speed", 380.0, "km/s"),
+                ("xray_flux_short", 2.0e-6, "W/m2"),
                 ("exercise_duration", 60.0, "minutes"),
             ],
         ),
@@ -157,6 +159,7 @@ pub fn replay(scenario: DemoScenario, day: u32) -> Result<DemoReplay, String> {
                 ("temperature_iss", 21.5, "degC"),
                 ("humidity_iss", 45.0, "percent"),
                 ("solar_wind_speed", 380.0, "km/s"),
+                ("xray_flux_short", 2.0e-6, "W/m2"),
                 ("exercise_duration", 60.0, "minutes"),
             ],
         ),
@@ -324,6 +327,10 @@ mod tests {
         assert!(day
             .observations
             .iter()
+            .any(|o| o.indicator == "xray_flux_short" && o.value > 0.0));
+        assert!(day
+            .observations
+            .iter()
             .all(|observation| observation.data_class.as_str() == "synthetic"));
     }
 
@@ -349,9 +356,9 @@ mod tests {
     fn nominal_and_dropout_are_explicit_and_never_fill_missing_sensor_values() {
         let nominal = replay(DemoScenario::Nominal, 50).unwrap();
         let dropout = replay(DemoScenario::Dropout, 21).unwrap();
-        assert_eq!(nominal.observations.len(), 17);
+        assert_eq!(nominal.observations.len(), 18);
         assert!(nominal.missing_indicators.is_empty());
-        assert_eq!(dropout.observations.len(), 16);
+        assert_eq!(dropout.observations.len(), 17);
         assert_eq!(dropout.missing_indicators, vec!["heart_rate"]);
     }
 

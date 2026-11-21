@@ -5119,9 +5119,9 @@ mod tests {
                 .iter()
                 .filter(|indicator| indicator["status"] != "no_data")
                 .count();
-            // The demo fills 17 of the 18 registry indicators; xray_flux_short
-            // stays missing on purpose so the UI keeps a real no_data case.
-            assert_eq!(active_count, 17);
+            // The demo fills all 18 registry indicators: the UI must never
+            // show a NO DATA card in demo mode.
+            assert_eq!(active_count, 18);
             let heart_rate = dashboard["indicators"]
                 .as_array()
                 .unwrap()
@@ -5148,7 +5148,9 @@ mod tests {
                 .iter()
                 .find(|indicator| indicator["id"] == "xray_flux_short")
                 .unwrap();
-            assert_eq!(xray["status"], "no_data");
+            assert_eq!(xray["status"], "fresh");
+            let xray_value = xray["value"].as_f64().unwrap();
+            assert!((0.0..=1.0e-4).contains(&xray_value));
             assert!(dashboard["hazards"]
                 .as_array()
                 .unwrap()
