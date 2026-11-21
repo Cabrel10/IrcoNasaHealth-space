@@ -1,0 +1,170 @@
+{
+  "version": "1.0.0",
+  "disclaimer": "Carte de contexte d'exposition, pas un diagnostic. Liens fondés sur le corpus documenté.",
+  "zones": [
+    {
+      "zone_id": "heart",
+      "name": "Heart & Great Vessels",
+      "system": "cardiovascular",
+      "hazards": [
+        {
+          "hazard_id": "altered_gravity",
+          "corpus_ids": [
+            "nasa-hrp-cardiovascular-risk",
+            "csa-iss-experiments-cardiovascular",
+            "nasa-hrp-ongoing-cipher"
+          ],
+          "indicators": [
+            "heart_rate"
+          ]
+        }
+      ],
+      "link_status": "sourced"
+    },
+    {
+      "zone_id": "arterial_tree",
+      "name": "Systemic Vascular Network",
+      "system": "cardiovascular",
+      "hazards": [
+        {
+          "hazard_id": "altered_gravity",
+          "corpus_ids": [
+            "nasa-hrp-cardiovascular-risk",
+            "csa-iss-experiments-cardiovascular",
+            "nasa-hrp-ongoing-cipher"
+          ],
+          "indicators": [
+            "heart_rate"
+          ]
+        }
+      ],
+      "link_status": "sourced"
+    },
+    {
+      "zone_id": "skull",
+      "name": "Cranium & Mandible",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "spine",
+      "name": "Vertebral Column & Sacrum",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "ribcage",
+      "name": "Thoracic Cage & Sternum",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "clavicle_scapula",
+      "name": "Pectoral Girdle",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "pelvis",
+      "name": "Pelvic Girdle",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "upper_limb_bones",
+      "name": "Upper Limb Skeleton",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "lower_limb_bones",
+      "name": "Lower Limb Skeleton",
+      "system": "skeletal",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "pectorals_deltoids",
+      "name": "Pectoral & Deltoid Complex",
+      "system": "muscular",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "abdominals_obliques",
+      "name": "Abdominal Wall Musculature",
+      "system": "muscular",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "arm_muscles",
+      "name": "Brachial & Forearm Flexors",
+      "system": "muscular",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "leg_muscles",
+      "name": "Quadriceps & Crural Complex",
+      "system": "muscular",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "lungs",
+      "name": "Lungs & Bronchial Tree",
+      "system": "organs",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "liver",
+      "name": "Liver",
+      "system": "organs",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "kidneys",
+      "name": "Kidneys & Ureters",
+      "system": "organs",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "intestines",
+      "name": "Small & Large Intestines",
+      "system": "organs",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "brain_spinal_cord",
+      "name": "Encephalon & Spinal Cord",
+      "system": "nervous",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "peripheral_nerves",
+      "name": "Peripheral Nerve Plexuses",
+      "system": "nervous",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    },
+    {
+      "zone_id": "holo_skin",
+      "name": "Cutaneous Holographic Envelope",
+      "system": "skin",
+      "hazards": [],
+      "link_status": "no_documented_link"
+    }
+  ]
+}
