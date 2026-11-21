@@ -1,0 +1,145 @@
+{
+  "version": "1.0.0",
+  "disclaimer": "Seuils illustratifs pour démonstration uniquement. Ne constituent pas des limites d'exposition validées ni un diagnostic.",
+  "inputs": {
+    "radiation_dose": {
+      "unit": "mSv/day",
+      "min": 0.0,
+      "max": 10.0,
+      "nominal": 0.35,
+      "description": "Dose journalière de radiation ionisante"
+    },
+    "co2_cabin": {
+      "unit": "ppm",
+      "min": 0.0,
+      "max": 5000.0,
+      "nominal": 420.0,
+      "description": "Concentration en dioxyde de carbone dans la cabine"
+    },
+    "isolation_days": {
+      "unit": "days",
+      "min": 0.0,
+      "max": 365.0,
+      "nominal": 1.0,
+      "description": "Durée cumulée d'isolement et de confinement"
+    },
+    "gravity_level": {
+      "unit": "g",
+      "min": 0.0,
+      "max": 1.0,
+      "nominal": 1.0,
+      "description": "Niveau de gravité environnementale (1.0 = Terre / gravité nominale)"
+    },
+    "exercise_minutes": {
+      "unit": "min/day",
+      "min": 0.0,
+      "max": 180.0,
+      "nominal": 60.0,
+      "description": "Durée journalière d'activité physique / contre-mesure"
+    }
+  },
+  "rules": [
+    {
+      "rule_id": "ENV_RAD_001",
+      "hazard_id": "radiation",
+      "input": "radiation_dose",
+      "threshold_status": "illustrative",
+      "thresholds": [
+        { "min": 0.0, "max": 0.5, "level": 0 },
+        { "min": 0.5, "max": 1.0, "level": 1 },
+        { "min": 1.0, "max": 2.0, "level": 2 },
+        { "min": 2.0, "max": null, "level": 3 }
+      ]
+    },
+    {
+      "rule_id": "ENV_CO2_001",
+      "hazard_id": "hostile_environment",
+      "input": "co2_cabin",
+      "threshold_status": "illustrative",
+      "thresholds": [
+        { "min": 0.0, "max": 1000.0, "level": 0 },
+        { "min": 1000.0, "max": 2500.0, "level": 1 },
+        { "min": 2500.0, "max": 4000.0, "level": 2 },
+        { "min": 4000.0, "max": null, "level": 3 }
+      ]
+    },
+    {
+      "rule_id": "ENV_ISO_001",
+      "hazard_id": "isolation",
+      "input": "isolation_days",
+      "threshold_status": "illustrative",
+      "thresholds": [
+        { "min": 0.0, "max": 30.0, "level": 0 },
+        { "min": 30.0, "max": 90.0, "level": 1 },
+        { "min": 90.0, "max": 180.0, "level": 2 },
+        { "min": 180.0, "max": null, "level": 3 }
+      ]
+    },
+    {
+      "rule_id": "ENV_GRAV_001",
+      "hazard_id": "altered_gravity",
+      "input": "gravity_level",
+      "threshold_status": "illustrative",
+      "thresholds": [
+        { "min": 0.9, "max": null, "level": 0 },
+        { "min": 0.5, "max": 0.9, "level": 1 },
+        { "min": 0.16, "max": 0.5, "level": 2 },
+        { "min": 0.0, "max": 0.16, "level": 3 }
+      ]
+    },
+    {
+      "rule_id": "ENV_EXER_001",
+      "hazard_id": "altered_gravity",
+      "input": "exercise_minutes",
+      "threshold_status": "illustrative",
+      "thresholds": [
+        { "min": 45.0, "max": null, "level": 0 },
+        { "min": 30.0, "max": 45.0, "level": 1 },
+        { "min": 15.0, "max": 30.0, "level": 2 },
+        { "min": 0.0, "max": 15.0, "level": 3 }
+      ]
+    }
+  ],
+  "presets": {
+    "nominal": {
+      "radiation_dose": 0.35,
+      "co2_cabin": 420.0,
+      "isolation_days": 1.0,
+      "gravity_level": 1.0,
+      "exercise_minutes": 60.0,
+      "description": "Conditions nominales : toutes expositions sous seuil (niveau 0)"
+    },
+    "solar_particle_event": {
+      "radiation_dose": 3.5,
+      "co2_cabin": 420.0,
+      "isolation_days": 1.0,
+      "gravity_level": 1.0,
+      "exercise_minutes": 60.0,
+      "description": "Événement à particules solaires : flux radiatif intense (> 2 mSv/jour)"
+    },
+    "high_cabin_co2": {
+      "radiation_dose": 0.35,
+      "co2_cabin": 3200.0,
+      "isolation_days": 1.0,
+      "gravity_level": 1.0,
+      "exercise_minutes": 60.0,
+      "description": "Hypercapnie cabine : concentration CO2 élevée (3200 ppm)"
+    },
+    "long_isolation_day124": {
+      "radiation_dose": 0.35,
+      "co2_cabin": 420.0,
+      "isolation_days": 124.0,
+      "gravity_level": 1.0,
+      "exercise_minutes": 60.0,
+      "description": "Isolement prolongé : jour de mission 124 (stress de confinement)"
+    },
+    "reduced_exercise": {
+      "radiation_dose": 0.35,
+      "co2_cabin": 420.0,
+      "isolation_days": 1.0,
+      "gravity_level": 1.0,
+      "exercise_minutes": 10.0,
+      "description": "Activité physique réduite : déficit de contre-mesure cardio (10 min/jour)"
+    }
+  }
+}

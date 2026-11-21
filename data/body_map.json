@@ -36,6 +36,35 @@
           "indicators": [
             "heart_rate"
           ]
+        },
+        {
+          "hazard_id": "radiation",
+          "corpus_ids": [
+            "csa-space-radiation-effects",
+            "csa-radi-n2-monitoring",
+            "csa-evarm-dosimetry"
+          ],
+          "indicators": [
+            "radiation_dose_daily"
+          ]
+        }
+      ],
+      "link_status": "sourced"
+    },
+    {
+      "zone_id": "brain_spinal_cord",
+      "name": "Encephalon & Spinal Cord",
+      "system": "nervous",
+      "hazards": [
+        {
+          "hazard_id": "radiation",
+          "corpus_ids": [
+            "csa-space-radiation-effects",
+            "csa-radi-n2-monitoring"
+          ],
+          "indicators": [
+            "radiation_dose_daily"
+          ]
         }
       ],
       "link_status": "sourced"
@@ -142,13 +171,6 @@
       "zone_id": "intestines",
       "name": "Small & Large Intestines",
       "system": "organs",
-      "hazards": [],
-      "link_status": "no_documented_link"
-    },
-    {
-      "zone_id": "brain_spinal_cord",
-      "name": "Encephalon & Spinal Cord",
-      "system": "nervous",
       "hazards": [],
       "link_status": "no_documented_link"
     },

@@ -50,6 +50,7 @@ use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
 pub mod demo;
+pub mod sim;
 
 #[derive(Clone)]
 pub struct AppState {

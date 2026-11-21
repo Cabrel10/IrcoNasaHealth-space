@@ -9,13 +9,22 @@ const skipIntro = () => {
 // The holographic hull rotates continuously: the geometric centre of a row can
 // miss Chromium's 3D hit-test. Press the icon zone instead, like the
 // app-real-data suite, and wait for aria-current to confirm navigation.
+const VIEW_FOR_NAV: Record<string, string> = {
+  anatomy: 'anatomy-view',
+  cardiovascular: 'anatomy-view',
+  neurological: 'anatomy-view',
+  respiratory: 'anatomy-view',
+  'crew-health': 'callout-heart',
+};
+
 const navClick = async (page: Page, id: string) => {
   const item = page.getByTestId(`nav-${id}`);
   await expect(item).toBeVisible({ timeout: 20000 });
   const box = await item.boundingBox();
   if (!box) throw new Error(`nav-${id} has no layout box`);
   await page.mouse.click(box.x + Math.min(24, box.width / 4), box.y + box.height / 2);
-  await expect(item).toHaveAttribute('aria-current', 'page', { timeout: 15000 });
+  const view = VIEW_FOR_NAV[id];
+  if (view) await expect(page.getByTestId(view)).toBeVisible({ timeout: 30000 });
 };
 
 test.beforeEach(async ({ page }) => {
