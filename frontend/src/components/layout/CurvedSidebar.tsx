@@ -303,13 +303,9 @@ export function CurvedSidebar() {
           style={{
             paddingTop: `${topPadPct.toFixed(2)}%`,
             paddingBottom: `${bottomPadPct.toFixed(2)}%`,
-            transformStyle: 'preserve-3d',
           }}
         >
-          <ul
-            className="pointer-events-none flex h-full flex-col justify-between"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
+          <ul className="pointer-events-none flex h-full flex-col justify-between">
             {HUD_NAV_ITEMS.map((item, index) => {
               const isActive = activeNavId === item.id;
               const inset = geometry.rowInsets[index];
@@ -321,7 +317,6 @@ export function CurvedSidebar() {
                   style={{
                     paddingLeft: inset.paddingLeftPct,
                     paddingRight: inset.paddingRightPct,
-                    transformStyle: 'preserve-3d',
                   }}
                 >
                   <motion.button
@@ -375,7 +370,6 @@ export function CurvedSidebar() {
                     }
                     style={{
                       borderRadius: 'var(--hud-selection-radius, 12px)',
-                      transformStyle: 'preserve-3d',
                       background: isActive
                         ? 'linear-gradient(90deg, rgba(7,93,219,0.92) 0%, rgba(8,127,255,0.68) 48%, rgba(0,223,255,0.28) 100%)'
                         : 'transparent',
