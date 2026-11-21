@@ -58,6 +58,7 @@ routes later in this draft. Business routes are versioned under `/api/v1`;
 | POST | `/api/v1/assistant/chat` |
 | GET | `/api/v1/knowledge/health` |
 | GET | `/api/v1/knowledge/hazards` |
+| GET | `/api/v1/knowledge/sources` |
 | GET | `/api/v1/knowledge/indicator/{indicator_id}` |
 | GET | `/api/v1/demo/scenarios` |
 | GET | `/api/v1/demo/replay` |

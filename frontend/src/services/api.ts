@@ -146,6 +146,16 @@ export interface AssistantResponse {
   source_not_found: boolean;
 }
 
+export interface KnowledgeSource {
+  id: string;
+  title: string;
+  publisher: string;
+  section: string;
+  url: string;
+  hazard: string | null;
+  indicators_related: string[];
+}
+
 export interface IndicatorHistory {
   subject_id: string;
   indicator: string;
@@ -229,6 +239,11 @@ export const api = {
     }),
 
   demoScenarios: () => fetchJSON<DemoScenario[]>('/demo/scenarios'),
+
+  knowledgeSources: () =>
+    fetchJSON<{ available: boolean; documents: number; sources: KnowledgeSource[] }>(
+      '/knowledge/sources',
+    ),
 
   dashboardSSE: (params: { subject_id?: string; data_class: string }) => {
     const qs = new URLSearchParams({ data_class: params.data_class });

@@ -683,6 +683,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/assistant/chat", post(assistant))
         .route("/api/v1/knowledge/health", get(knowledge_health))
         .route("/api/v1/knowledge/hazards", get(knowledge_hazards))
+        .route("/api/v1/knowledge/sources", get(knowledge_sources))
         .route(
             "/api/v1/knowledge/indicator/:indicator_id",
             get(knowledge_indicator),
@@ -3637,6 +3638,37 @@ async fn knowledge_hazards(State(state): State<AppState>) -> Result<Json<Value>,
     })))
 }
 
+async fn knowledge_sources(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
+    let Some(knowledge) = state.knowledge.as_ref() else {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "knowledge_unavailable",
+            "The offline scientific corpus is not installed",
+            "Configure IRCO_CORPUS_PATH with a validated JSONL corpus.",
+        ));
+    };
+    let sources: Vec<Value> = knowledge
+        .documents()
+        .iter()
+        .map(|document| {
+            json!({
+                "id": document.id,
+                "title": document.title,
+                "publisher": document.source,
+                "section": document.section,
+                "url": document.url,
+                "hazard": document.hazard,
+                "indicators_related": document.indicators_related,
+            })
+        })
+        .collect();
+    Ok(Json(json!({
+        "available": true,
+        "documents": sources.len(),
+        "sources": sources,
+    })))
+}
+
 async fn knowledge_indicator(
     State(state): State<AppState>,
     Path(indicator_id): Path<String>,
@@ -5263,6 +5295,62 @@ mod tests {
         );
         assert_eq!(result["hits"][0]["citation"]["document_date"], "2025-01-01");
         assert_eq!(result["hits"][0]["evidence_kind"], "curated_summary");
+    }
+
+    #[tokio::test]
+    async fn knowledge_sources_lists_every_citable_document() {
+        let database = Connection::open_in_memory().unwrap();
+        irco_data::store::init_db(&database).unwrap();
+        irco_alerts::init_db(&database).unwrap();
+        let entry = |id: &str, url: &str| CorpusEntry {
+            id: id.to_owned(),
+            title: format!("Title {id}"),
+            source: "NASA HRP".to_owned(),
+            section: "Exposure".to_owned(),
+            url: url.to_owned(),
+            content: "Curated summary.".to_owned(),
+            evidence_kind: EvidenceKind::CuratedSummary,
+            hazard: Some("radiation".to_owned()),
+            indicators_related: vec!["radiation_dose_daily".to_owned()],
+            organ_systems: Vec::new(),
+            document_date: None,
+            extraction_date: None,
+            page_numbers: None,
+            confidence: None,
+        };
+        let state = AppState::new(
+            database,
+            RulesDocument {
+                version: "0.1.0".to_owned(),
+                rules: Vec::new(),
+            },
+            None,
+        )
+        .with_knowledge(KnowledgeBase::from_entries(vec![
+            entry("nasa-radiation-01", "https://example.test/nasa/radiation"),
+            entry("csa-radiation-02", "https://example.test/csa/radiation"),
+        ]));
+        let response = router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/knowledge/sources")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["documents"], 2);
+        let sources = result["sources"].as_array().unwrap();
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0]["id"], "nasa-radiation-01");
+        assert_eq!(sources[0]["publisher"], "NASA HRP");
+        assert_eq!(sources[0]["url"], "https://example.test/nasa/radiation");
+        assert_eq!(sources[1]["id"], "csa-radiation-02");
     }
 
     #[tokio::test]

@@ -19,7 +19,7 @@ export function InspectionDrawer({
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiCitations, setAiCitations] = useState<
-    Array<{ document_id: string; title: string }>
+    Array<{ document_id: string; title: string; url?: string | null }>
   >([]);
   const [aiProvider, setAiProvider] = useState<string | null>(null);
   const [showAi, setShowAi] = useState<boolean>(false);
@@ -135,7 +135,24 @@ export function InspectionDrawer({
               {aiCitations.length > 0 && (
                 <div className="mt-2 border-t border-cyan-500/20 pt-1 text-[10px] text-cyan-200/70">
                   <span className="font-semibold">Citations : </span>
-                  {aiCitations.map((citation) => citation.title).join(', ')}
+                  {aiCitations.map((citation, index) => (
+                    <span key={citation.document_id}>
+                      {index > 0 && ', '}
+                      {citation.url ? (
+                        <a
+                          href={citation.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid={`citation-link-${citation.document_id}`}
+                          className="underline decoration-cyan-400/40 underline-offset-2 hover:text-cyan-100"
+                        >
+                          {citation.title}
+                        </a>
+                      ) : (
+                        citation.title
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
               <div className="mt-1 text-[9px] text-slate-400 italic">

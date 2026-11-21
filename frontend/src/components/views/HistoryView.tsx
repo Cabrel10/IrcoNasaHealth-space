@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useMissionStore } from '@/stores/useMissionStore';
-import { api, type IndicatorHistory } from '@/services/api';
+import { api, type IndicatorHistory, type KnowledgeSource } from '@/services/api';
 import { CYLINDER_METRICS, INDICATOR_IDS } from '@/constants/metrics';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusPill } from '@/components/ui/StatusPill';
@@ -21,6 +21,22 @@ interface HistoryRow {
 export const HistoryView: React.FC = () => {
   const { dashboard, dashboardStatus, dashboardDay } = useMissionStore();
   const [rows, setRows] = useState<HistoryRow[] | null>(null);
+  const [sources, setSources] = useState<KnowledgeSource[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .knowledgeSources()
+      .then((result) => {
+        if (!cancelled) setSources(result.sources);
+      })
+      .catch(() => {
+        if (!cancelled) setSources([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +163,46 @@ export const HistoryView: React.FC = () => {
             );
           })}
       </div>
+
+      {/* Curated corpus sources: exactly what the backend can cite, with the
+          real publisher URL. The frontend never invents a source. */}
+      <section data-testid="sources-view" className="mt-6">
+        <h3 className="font-heading font-bold text-sm text-white tracking-wide px-2 mb-1">
+          Sources du corpus — {sources === null ? '…' : sources.length} documents citables
+        </h3>
+        <p className="px-2 mb-3 text-[10px] font-mono text-[#94b0d1]">
+          Chargées par le backend (BM25, GET /api/v1/knowledge/sources). NOAA SWPC et NASA OSDR
+          sont du contexte cabine et environnement, jamais une mesure de santé de l'astronaute.
+        </p>
+        {sources === null ? (
+          <GlassCard padding="sm" className="text-[11px] font-mono text-[#94b0d1]">
+            chargement des sources…
+          </GlassCard>
+        ) : sources.length === 0 ? (
+          <GlassCard padding="sm" className="text-[11px] font-mono text-[#94b0d1]">
+            Corpus indisponible — aucune source n'est affichée plutôt qu'une source inventée.
+          </GlassCard>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            {sources.map((source) => (
+              <a
+                key={source.id}
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid={`source-link-${source.id}`}
+                className="rounded-lg border border-[#00CFFF]/20 bg-[#081A30]/70 px-3 py-2 text-[10px] font-mono text-[#B9DDF7] hover:border-[#00CFFF]/60 hover:text-white transition-colors"
+              >
+                <span className="block text-[11px] font-bold text-white">{source.title}</span>
+                <span className="block text-[9px] uppercase tracking-wide text-[#94b0d1]">
+                  {source.publisher} · {source.section}
+                </span>
+                <span className="block truncate text-cyan-300/80">{source.url}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 };

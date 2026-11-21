@@ -134,6 +134,12 @@ impl KnowledgeBase {
         self.documents.len()
     }
 
+    /// Curated corpus entries in their original order. The read-only sources
+    /// endpoint exposes exactly the documents the assistant can cite.
+    pub fn documents(&self) -> &[CorpusEntry] {
+        &self.documents
+    }
+
     pub fn search(&self, query: &str, filters: SearchFilters<'_>, limit: usize) -> Vec<SearchHit> {
         if limit == 0 || self.documents.is_empty() {
             return Vec::new();
@@ -347,5 +353,30 @@ mod tests {
         );
         assert_eq!(radi_n2.evidence_kind, EvidenceKind::CuratedSummary);
         assert!(radi_n2.evidence.contains("bubble monitors"));
+    }
+
+    #[test]
+    fn checked_in_corpus_exposes_every_source_with_its_url() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/corpus.jsonl");
+        let index = KnowledgeBase::load_jsonl(path).unwrap();
+        assert_eq!(index.documents().len(), index.document_count());
+        assert_eq!(index.documents().len(), 11);
+        assert!(
+            index
+                .documents()
+                .iter()
+                .all(|document| document.url.starts_with("https://")),
+            "every curated source must carry a public URL"
+        );
+        for id in [
+            "noaa-swpc-realtime-feeds",
+            "nasa-osdr-eda-rr1-telemetry",
+            "nasa-hrp-hazards-overview",
+        ] {
+            assert!(
+                index.documents().iter().any(|document| document.id == id),
+                "missing curated source {id}"
+            );
+        }
     }
 }

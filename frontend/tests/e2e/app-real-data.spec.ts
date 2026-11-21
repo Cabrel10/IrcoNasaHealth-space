@@ -231,3 +231,55 @@ test('mission demo sequence 1 → 97 → 117 → 124 remains API-backed across t
     }
   }
 });
+
+test('Sources view lists the 11 curated documents with their real publisher URLs', async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  await page.goto(APP_BASE);
+  await expect(page.getByTestId('global-level-badge')).toBeVisible({ timeout: 15000 });
+  await navClick(page, 'history-reports');
+
+  await expect(page.getByTestId('sources-view')).toBeVisible({ timeout: 20000 });
+  // Exactly the corpus loaded by the backend — no invented source card.
+  await expect(page.getByTestId(/^source-link-/)).toHaveCount(11);
+
+  // Sources listed in the submission must be present and point at the real URL.
+  await expect(page.getByTestId('source-link-noaa-swpc-realtime-feeds')).toHaveAttribute(
+    'href',
+    'https://services.swpc.noaa.gov/',
+  );
+  await expect(page.getByTestId('source-link-nasa-osdr-eda-rr1-telemetry')).toHaveAttribute(
+    'href',
+    'https://visualization.osdr.nasa.gov/eda/',
+  );
+  await expect(page.getByTestId('source-link-nasa-hrp-hazards-overview')).toHaveAttribute(
+    'href',
+    'https://www.nasa.gov/hrp/hazards/',
+  );
+
+  // Opening a citation must reach the publisher URL (new tab).
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.getByTestId('source-link-csa-radi-n2-monitoring').click(),
+  ]);
+  expect(popup.url()).toContain('asc-csa.gc.ca');
+  await popup.close();
+});
+
+test('environment indicators are labelled cabin context, crew indicators are not', async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await page.goto(`${APP_BASE}/?day=117`);
+  await expect(page.getByTestId('global-level-badge')).toHaveText('RED', { timeout: 15000 });
+  await navClick(page, 'crew-health');
+
+  for (const id of ['radiation_dose_daily', 'xray_flux_short', 'co2_cabin']) {
+    const scope = page.getByTestId(`scope-${id}`);
+    await expect(scope).toBeVisible({ timeout: 20000 });
+    await expect(scope).toContainText(/contexte cabine/i);
+    await expect(scope).toContainText(/jamais une sant/i);
+  }
+  await expect(page.getByTestId('scope-stress_score')).toContainText(/quipage/i);
+});

@@ -44,10 +44,12 @@ function EvidenceMetricCard({
   id,
   label,
   indicators,
+  context = 'crew',
 }: {
   id: string;
   label: string;
   indicators: IndicatorMap;
+  context?: 'crew' | 'environment';
 }) {
   const indicator: DashboardIndicator | undefined = indicators.get(id);
   const value = fmtValue(indicator?.value);
@@ -74,6 +76,14 @@ function EvidenceMetricCard({
       <div className="text-[9px] font-mono text-gray-400">
         {freshness.toUpperCase()} · {indicatorReferenceLabel(indicator)} ·{' '}
         {thresholdStatusLabel(indicator?.threshold_status)}
+      </div>
+      <div
+        data-testid={`scope-${id}`}
+        className="text-[8px] font-mono uppercase tracking-wide text-cyan-300/70"
+      >
+        {context === 'environment'
+          ? 'Environnement · contexte cabine, jamais une santé astronaute'
+          : 'Équipage · indicateur physiologique'}
       </div>
       <details className="mt-1 border-t border-white/10 pt-1">
         <summary className="cursor-pointer text-[9px] font-mono text-[#00CFFF]">
@@ -267,9 +277,11 @@ export const CrewHealthView: React.FC = () => {
           </GlassCard>
         </div>
 
-        {/* 2. Center: Holographic Human Body & Floating Callouts */}
+        {/* 2. Center: Holographic Human Body & Floating Callouts.
+            z-30 keeps the interactive callouts above the left crew column
+            (z-20): they overflow into that grid cell and must stay clickable. */}
         <div
-          className="relative w-full h-full flex items-center justify-center min-h-[380px]"
+          className="relative z-30 w-full h-full flex items-center justify-center min-h-[380px]"
           onMouseMove={handleMouseMove}
           style={{ perspective: 1000 }}
         >
@@ -592,9 +604,24 @@ export const CrewHealthView: React.FC = () => {
 
       {/* Mission context uses only indicators and mission metadata from the API. */}
       <div className="relative z-20 grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2 xl:grid-cols-4">
-        <EvidenceMetricCard id="radiation_dose_daily" label="Dose de radiation" indicators={indicatorMap} />
-        <EvidenceMetricCard id="xray_flux_short" label="Flux X" indicators={indicatorMap} />
-        <EvidenceMetricCard id="co2_cabin" label="CO₂ cabine" indicators={indicatorMap} />
+        <EvidenceMetricCard
+          id="radiation_dose_daily"
+          label="Dose de radiation"
+          indicators={indicatorMap}
+          context="environment"
+        />
+        <EvidenceMetricCard
+          id="xray_flux_short"
+          label="Flux X"
+          indicators={indicatorMap}
+          context="environment"
+        />
+        <EvidenceMetricCard
+          id="co2_cabin"
+          label="CO₂ cabine"
+          indicators={indicatorMap}
+          context="environment"
+        />
         <EvidenceMetricCard id="stress_score" label="Score de stress" indicators={indicatorMap} />
         <GlassCard padding="sm" className="sm:col-span-2 xl:col-span-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

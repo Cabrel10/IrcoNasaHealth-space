@@ -2164,6 +2164,87 @@
         }
       }
     },
+    "/api/v1/knowledge/sources": {
+      "get": {
+        "operationId": "listKnowledgeSources",
+        "responses": {
+          "200": {
+            "description": "Curated sources the assistant can cite (title, publisher, URL).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "available",
+                    "documents",
+                    "sources"
+                  ],
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "documents": {
+                      "type": "integer"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "title",
+                          "publisher",
+                          "section",
+                          "url"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "publisher": {
+                            "type": "string"
+                          },
+                          "section": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "hazard": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "indicators_related": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Offline corpus is not installed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/knowledge/indicator/{indicator_id}": {
       "get": {
         "operationId": "getIndicatorKnowledge",

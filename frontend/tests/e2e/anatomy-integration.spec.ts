@@ -1,9 +1,21 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const APP_BASE = 'http://localhost:5174';
 
 const skipIntro = () => {
   sessionStorage.setItem('icorp-intro-done', 'true');
+};
+
+// The holographic hull rotates continuously: the geometric centre of a row can
+// miss Chromium's 3D hit-test. Press the icon zone instead, like the
+// app-real-data suite, and wait for aria-current to confirm navigation.
+const navClick = async (page: Page, id: string) => {
+  const item = page.getByTestId(`nav-${id}`);
+  await expect(item).toBeVisible({ timeout: 20000 });
+  const box = await item.boundingBox();
+  if (!box) throw new Error(`nav-${id} has no layout box`);
+  await page.mouse.click(box.x + Math.min(24, box.width / 4), box.y + box.height / 2);
+  await expect(item).toHaveAttribute('aria-current', 'page', { timeout: 15000 });
 };
 
 test.beforeEach(async ({ page }) => {
@@ -16,10 +28,7 @@ test.describe('3D Anatomical Explorer Integration', () => {
     await page.goto(APP_BASE);
 
     // Navigate to 3D Anatomy
-    const anatomyBtn = page.getByTestId('nav-anatomy');
-    await expect(anatomyBtn).toBeVisible({ timeout: 20000 });
-    await page.waitForTimeout(1000);
-    await anatomyBtn.click();
+    await navClick(page, 'anatomy');
 
     // Verify 3D Anatomy view container
     const anatomyView = page.getByTestId('anatomy-view');
@@ -38,17 +47,14 @@ test.describe('3D Anatomical Explorer Integration', () => {
     // Verify ControlDock is present
     await expect(page.getByText('Visual BPM')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Flow')).toBeVisible();
-    await expect(page.getByText('Cardiovascular')).toBeVisible();
+    await expect(anatomyView.getByText('Cardiovascular')).toBeVisible();
   });
 
   test('CrewHealthView allows toggling between 2D schema and 3D procedural mannequin', async ({ page }) => {
     await page.goto(APP_BASE);
 
     // Navigate to Crew Health
-    const crewHealthBtn = page.getByTestId('nav-crew-health');
-    await expect(crewHealthBtn).toBeVisible({ timeout: 20000 });
-    await page.waitForTimeout(1000);
-    await crewHealthBtn.click();
+    await navClick(page, 'crew-health');
 
     // Verify 2D schema is initially visible
     await expect(page.getByText('2D Schéma')).toBeVisible({ timeout: 30000 });
@@ -69,10 +75,7 @@ test.describe('3D Anatomical Explorer Integration', () => {
     await page.goto(APP_BASE);
 
     // Go to Crew Health
-    const crewHealthBtn = page.getByTestId('nav-crew-health');
-    await expect(crewHealthBtn).toBeVisible({ timeout: 20000 });
-    await page.waitForTimeout(1000);
-    await crewHealthBtn.click();
+    await navClick(page, 'crew-health');
 
     // Click cardiac callout with force=true to bypass floating animation check
     const cardiacCallout = page.getByTestId('callout-heart');
@@ -89,10 +92,7 @@ test.describe('3D Anatomical Explorer Integration', () => {
     await page.goto(APP_BASE);
 
     // Open Cardiovascular view
-    const cardioBtn = page.getByTestId('nav-cardiovascular');
-    await expect(cardioBtn).toBeVisible({ timeout: 20000 });
-    await page.waitForTimeout(1000);
-    await cardioBtn.click();
+    await navClick(page, 'cardiovascular');
     await expect(page.getByTestId('anatomy-view')).toBeVisible({ timeout: 30000 });
 
     // Inspection panel is open for heart
